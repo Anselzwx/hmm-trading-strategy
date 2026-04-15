@@ -1,0 +1,5 @@
+.cache_*.pkl
+*.pkl
+__pycache__/
+*.pyc
+.DS_Store
