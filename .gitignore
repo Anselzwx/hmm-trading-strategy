@@ -1,5 +1,5 @@
 .cache_*.pkl
-*.pkl
 __pycache__/
 *.pyc
 .DS_Store
+# results/ 目录里的 pkl 需要上传，不要忽略

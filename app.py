@@ -9,8 +9,33 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 
+import os
+import pickle
+
 from data_loader import fetch_data
 from backtester  import run_backtest, STARTING_CAP, MIN_CONFIRMATIONS, _position_size
+
+RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
+
+
+def _safe_filename(ticker: str) -> str:
+    return ticker.replace("=", "_").replace("/", "_")
+
+
+def _load_precomputed(ticker: str):
+    path = os.path.join(RESULTS_DIR, f"{_safe_filename(ticker)}.pkl")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    return None
+
+
+def _computed_at() -> str:
+    path = os.path.join(RESULTS_DIR, "computed_at.txt")
+    if os.path.exists(path):
+        with open(path) as f:
+            return f.read().strip()
+    return "未知"
 
 # ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -163,6 +188,11 @@ html, body, [class*="css"] {
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_asset(ticker: str) -> dict:
+    # 优先读预计算结果（秒开）
+    precomputed = _load_precomputed(ticker)
+    if precomputed is not None:
+        return precomputed
+    # 没有预计算文件则实时计算（Streamlit Cloud 可能超时）
     df = fetch_data(ticker)
     return run_backtest(df, ticker)
 
@@ -642,7 +672,7 @@ def main() -> None:
     hc1, hc2 = st.columns([8, 1])
     with hc1:
         st.markdown('<div class="page-title">📈 Regime-Based HMM Trading Dashboard</div>', unsafe_allow_html=True)
-        st.markdown('<div class="page-sub">7-State Gaussian HMM &nbsp;·&nbsp; 14-Signal Voting &nbsp;·&nbsp; 2.5× Leverage &nbsp;·&nbsp; Cooldown Protection</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="page-sub">7-State Gaussian HMM &nbsp;·&nbsp; 14-Signal Voting &nbsp;·&nbsp; 2.5× Leverage &nbsp;·&nbsp; Walk-Forward &nbsp;·&nbsp; 数据截至 {_computed_at()}</div>', unsafe_allow_html=True)
     with hc2:
         st.write("")
         st.write("")
