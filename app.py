@@ -501,7 +501,7 @@ def render_asset(ticker: str) -> None:
             <div class="signal-title">HMM 状态（Walk-Forward）</div>
             <div style="margin-top:8px"><span class="regime-pill {pc}">{cur_regime}</span></div>
             <div style="margin-top:8px;font-size:0.72rem;color:#475569">
-                7 状态 · {is_daily_txt} · {len(df):,} bars · 止损 -8%
+                9 状态 · {is_daily_txt} · {len(df):,} bars · 止损 -8%
             </div>
         </div>""", unsafe_allow_html=True)
 
@@ -672,7 +672,7 @@ def main() -> None:
     hc1, hc2 = st.columns([8, 1])
     with hc1:
         st.markdown('<div class="page-title">📈 Regime-Based HMM Trading Dashboard</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="page-sub">7-State Gaussian HMM &nbsp;·&nbsp; 14-Signal Voting &nbsp;·&nbsp; 2.5× Leverage &nbsp;·&nbsp; Walk-Forward &nbsp;·&nbsp; 数据截至 {_computed_at()}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="page-sub">9-State Gaussian HMM &nbsp;·&nbsp; 14-Signal Voting &nbsp;·&nbsp; 2.5× Leverage &nbsp;·&nbsp; Walk-Forward &nbsp;·&nbsp; 数据截至 {_computed_at()}</div>', unsafe_allow_html=True)
     with hc2:
         st.write("")
         st.write("")

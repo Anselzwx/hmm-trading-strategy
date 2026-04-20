@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 # ============================================================
 # 常量
 # ============================================================
-N_STATES          = 7
+N_STATES          = 9
 LEVERAGE          = 2.5
 STARTING_CAP      = 10_000.0
 MIN_CONFIRMATIONS = 9        # 14 条信号中至少满足 9 条才入场
@@ -73,7 +73,7 @@ def identify_states(model: hmm.GaussianHMM) -> Tuple[List[int], int]:
     """
     mean_returns = model.means_[:, 0]
     ranked       = np.argsort(mean_returns)[::-1]
-    return ranked[:2].tolist(), int(ranked[-1])
+    return ranked[:1].tolist(), int(ranked[-1])   # 只认收益率最高的 1 个状态为牛市
 
 
 def decode_regimes(model: hmm.GaussianHMM, features: np.ndarray) -> np.ndarray:
@@ -370,13 +370,15 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     # bull = top 2，bear = 0
     df = df.copy()
     df["state"]   = wf_states
-    df["is_bull"] = df["state"].isin([N_STATES-1, N_STATES-2])
+    df["is_bull"] = df["state"] == (N_STATES - 1)   # 只有最高收益率状态才是牛市
     df["is_bear"] = df["state"] == 0
 
     def _label(s: int) -> str:
-        if s == N_STATES-1: return "Bull Run"
-        if s == N_STATES-2: return "Bull+"
-        if s == 0:          return "Bear/Crash"
+        if s == N_STATES - 1: return "Bull Run"
+        if s == N_STATES - 2: return "Bull+"        # 次高：显示但不入场
+        if s == N_STATES - 3: return "Warming Up"   # 第三高：预热状态
+        if s == 0:            return "Bear/Crash"
+        if s == 1:            return "Bear"
         return f"Neutral-{s}"
 
     df["regime_label"] = df["state"].apply(_label)
