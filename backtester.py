@@ -25,10 +25,10 @@ warnings.filterwarnings("ignore")
 # ============================================================
 # 常量
 # ============================================================
-N_STATES          = 7        # 默认状态数（AAPL 使用）
+N_STATES          = 7
 LEVERAGE          = 2.5
 STARTING_CAP      = 10_000.0
-MIN_CONFIRMATIONS = 8        # 默认信号阈值
+MIN_CONFIRMATIONS = 9        # 14 条信号中至少满足 9 条才入场
 TOTAL_SIGNALS     = 14
 RANDOM_SEED       = 42
 STOP_LOSS_PCT     = -0.08    # 固定止损：单笔亏损超过 -8% 立即出场
@@ -43,22 +43,14 @@ MAX_HOLD_DAILY  = 60
 WF_TRAIN_RATIO  = 0.6        # 60% 训练，40% 测试（滚动）
 WF_STEP_RATIO   = 0.1        # 每次向前滚动 10%
 
-# ── 每个 ticker 单独最优参数 ────────────────────────────────
-# n_states: HMM状态数  bull_top: 入场状态数（排名靠前N个）  min_conf: 信号阈值
-TICKER_PARAMS = {
-    "AAPL":  {"n_states": 7, "bull_top": 3, "min_conf": 8},
-    "GC=F":  {"n_states": 7, "bull_top": 1, "min_conf": 8},
-    "SI=F":  {"n_states": 7, "bull_top": 1, "min_conf": 8},
-}
-
 
 # ============================================================
 # 1. HMM 引擎
 # ============================================================
 
-def fit_hmm(features: np.ndarray, n_states: int = N_STATES) -> hmm.GaussianHMM:
+def fit_hmm(features: np.ndarray) -> hmm.GaussianHMM:
     model = hmm.GaussianHMM(
-        n_components=n_states,
+        n_components=N_STATES,
         covariance_type="full",
         n_iter=200,
         tol=1e-4,
@@ -69,15 +61,19 @@ def fit_hmm(features: np.ndarray, n_states: int = N_STATES) -> hmm.GaussianHMM:
     tm = model.transmat_
     row_sums = tm.sum(axis=1, keepdims=True)
     zero_rows = (row_sums == 0).flatten()
-    tm[zero_rows] = 1.0 / n_states
+    tm[zero_rows] = 1.0 / N_STATES          # 未观测到的状态均匀分布
     model.transmat_ = tm / tm.sum(axis=1, keepdims=True)
     return model
 
 
-def identify_states(model: hmm.GaussianHMM, bull_top: int = 1) -> Tuple[List[int], int]:
+def identify_states(model: hmm.GaussianHMM) -> Tuple[List[int], int]:
+    """
+    bull_states : 收益率最高的 2 个状态
+    bear_state  : 收益率最低的状态
+    """
     mean_returns = model.means_[:, 0]
     ranked       = np.argsort(mean_returns)[::-1]
-    return ranked[:bull_top].tolist(), int(ranked[-1])
+    return ranked[:2].tolist(), int(ranked[-1])
 
 
 def decode_regimes(model: hmm.GaussianHMM, features: np.ndarray) -> np.ndarray:
@@ -203,7 +199,7 @@ def compute_signals(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
     c14 = df["pct_from_high"] > -30
 
     score = sum(x.astype(int) for x in [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14])
-    return score >= MIN_CONFIRMATIONS, score   # raw signal uses global default; run_backtest overrides per-ticker
+    return score >= MIN_CONFIRMATIONS, score
 
 
 def _position_size(score: float) -> float:
@@ -226,28 +222,35 @@ def _position_size(score: float) -> float:
 
 def _walk_forward_states(features: np.ndarray,
                           n_total: int,
-                          n_states: int = N_STATES,
                           train_ratio: float = WF_TRAIN_RATIO,
                           step_ratio:  float = WF_STEP_RATIO) -> np.ndarray:
-    min_train  = max(n_states * 20, 60)
+    """
+    滚动窗口训练 HMM，对每个 bar 使用「该 bar 之前」的数据训练的模型预测。
+    返回长度 = n_total 的 state_seq（前 train_size 个 bar 用全量模型填充）。
+    """
+    min_train  = max(N_STATES * 20, 60)     # HMM 最小训练样本
     train_size = max(int(n_total * train_ratio), min_train)
     train_size = min(train_size, n_total - 1)
     step_size  = max(int(n_total * step_ratio), 1)
     state_seq  = np.full(n_total, -1, dtype=int)
 
-    base_model = fit_hmm(features[:train_size], n_states)
-    mr0 = base_model.means_[:, 0]
-    remap0 = {old: new for new, old in enumerate(np.argsort(mr0))}
-    state_seq[:train_size] = [remap0[p] for p in base_model.predict(features[:train_size])]
+    # 先用前 train_size 条数据训练一个基准模型，预测这段
+    base_model = fit_hmm(features[:train_size])
+    state_seq[:train_size] = base_model.predict(features[:train_size])
 
+    # 滚动向前
     cursor = train_size
     while cursor < n_total:
-        end   = min(cursor + step_size, n_total)
-        model = fit_hmm(features[:cursor], n_states)
+        end = min(cursor + step_size, n_total)
+        model = fit_hmm(features[:cursor])          # 只用 cursor 之前的数据
         preds = model.predict(features[cursor:end])
-        mr    = model.means_[:, 0]
-        remap = {old: new for new, old in enumerate(np.argsort(mr))}
-        state_seq[cursor:end] = [remap[p] for p in preds]
+
+        # 对齐状态标签（HMM 状态编号可能每次不同，按均值 return 排序对齐）
+        # 直接用 mean return 排序重映射到 {0=最差,…,N-1=最好}
+        mr     = model.means_[:, 0]
+        remap  = {old: new for new, old in enumerate(np.argsort(mr))}
+        preds  = np.array([remap[p] for p in preds])
+        state_seq[cursor:end] = preds
         cursor = end
 
     return state_seq
@@ -357,38 +360,30 @@ def _simulate(df: pd.DataFrame,
 
 def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     is_daily = ticker in DAILY_TICKERS
-    params   = TICKER_PARAMS.get(ticker, {"n_states": N_STATES, "bull_top": 1, "min_conf": MIN_CONFIRMATIONS})
-    n_states = params["n_states"]
-    bull_top = params["bull_top"]
-    min_conf = params["min_conf"]
-
     features = get_hmm_features(df)
     n        = len(features)
 
-    # ── Walk-Forward 状态序列（已按均值收益排序，0=最差，n_states-1=最好）──
-    wf_states = _walk_forward_states(features, n, n_states)
+    # ── Walk-Forward 状态序列 ────────────────────────────────
+    wf_states = _walk_forward_states(features, n)
 
+    # Walk-Forward 状态：0=worst … N-1=best（已按 mean_return 排序）
+    # bull = top 2，bear = 0
     df = df.copy()
     df["state"]   = wf_states
-    # bull = rank >= n_states - bull_top，bear = rank 0
-    df["is_bull"] = df["state"] >= (n_states - bull_top)
+    df["is_bull"] = df["state"].isin([N_STATES-1, N_STATES-2])
     df["is_bear"] = df["state"] == 0
 
     def _label(s: int) -> str:
-        if s == n_states - 1: return "Bull Run"
-        if s == n_states - 2: return "Bull+"
-        if s == n_states - 3: return "Warming Up"
-        if s == 0:            return "Bear/Crash"
-        if s == 1:            return "Bear"
+        if s == N_STATES-1: return "Bull Run"
+        if s == N_STATES-2: return "Bull+"
+        if s == 0:          return "Bear/Crash"
         return f"Neutral-{s}"
 
     df["regime_label"] = df["state"].apply(_label)
 
-    # ── 技术指标 & 信号（使用 ticker 专属阈值）───────────────
+    # ── 技术指标 & 信号 ───────────────────────────────────────
     df = compute_indicators(df, ticker)
-    raw_signal, score = compute_signals(df)
-    df["signal_score"] = score
-    df["tech_signal"]  = score >= min_conf
+    df["tech_signal"], df["signal_score"] = compute_signals(df)
 
     # ── 模拟 ──────────────────────────────────────────────────
     equity_curve, trades = _simulate(df, is_daily)
@@ -397,10 +392,10 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     # ── 指标 ──────────────────────────────────────────────────
     metrics = _compute_metrics(df, trades, ticker, is_daily)
 
-    # ── 最终模型（全量，仅供展示）────────────────────────────
-    full_model              = fit_hmm(features, n_states)
-    bull_states, bear_state = identify_states(full_model, bull_top)
-    regime_labels           = {s: _label(s) for s in range(n_states)}
+    # ── 最终模型（用全量数据，仅供 UI 展示用）────────────────
+    full_model              = fit_hmm(features)
+    bull_states, bear_state = identify_states(full_model)
+    regime_labels           = {s: _label(s) for s in range(N_STATES)}
 
     return {
         "df":            df,
@@ -411,9 +406,6 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
         "regime_labels": regime_labels,
         "model":         full_model,
         "is_daily":      is_daily,
-        "n_states":      n_states,
-        "bull_top":      bull_top,
-        "min_conf":      min_conf,
     }
 
 
