@@ -13,7 +13,7 @@ import pickle
 import base64
 
 from data_loader import fetch_data
-from backtester  import run_backtest, STARTING_CAP, MIN_CONFIRMATIONS, _position_size, N_STATES
+from backtester  import run_backtest, STARTING_CAP, MIN_CONFIRMATIONS, _position_size, N_STATES, TICKER_PARAMS
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
 ASSETS_DIR  = os.path.join(os.path.dirname(__file__), "assets")
@@ -660,8 +660,11 @@ def render_asset(ticker: str) -> None:
     df      = res["df"]
     trades  = res["trades"]
     metrics = res["metrics"]
-    last    = df.iloc[-1]
+    last     = df.iloc[-1]
     is_daily = res["is_daily"]
+    n_states = res.get("n_states", N_STATES)
+    min_conf = res.get("min_conf", MIN_CONFIRMATIONS)
+    bull_top = res.get("bull_top", 1)
 
     cur_regime  = last["regime_label"]
     cur_signal  = "LONG" if (last["is_bull"] and last["tech_signal"]) else "CASH"
@@ -688,7 +691,7 @@ def render_asset(ticker: str) -> None:
             <div class="signal-title">HMM 状态（Walk-Forward）</div>
             <div style="margin-top:8px"><span class="regime-pill {pc}">{cur_regime}</span></div>
             <div style="margin-top:8px;font-size:0.72rem;color:#475569">
-                9 状态 · {is_daily_txt} · {len(df):,} bars · 止损 -8%
+                {n_states} 状态 · {bull_top}入场 · {is_daily_txt} · {len(df):,} bars · 止损 -8%
             </div>
         </div>""", unsafe_allow_html=True)
 
@@ -740,7 +743,7 @@ def render_asset(ticker: str) -> None:
                 <div class="score-inner" style="width:{bar_w}%;background:{bar_c};opacity:0.85"></div>
             </div>
             <div style="font-size:0.68rem;color:#475569;margin-bottom:10px">
-                {'✅ 满足入场条件' if n >= MIN_CONFIRMATIONS else f'⚠️ 还差 {MIN_CONFIRMATIONS - n} 条'}
+                {'✅ 满足入场条件' if n >= min_conf else f'⚠️ 还差 {min_conf - n} 条'}
             </div>""", unsafe_allow_html=True)
 
         col_a, col_b = st.columns(2)
