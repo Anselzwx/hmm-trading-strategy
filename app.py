@@ -480,6 +480,211 @@ def trade_analytics_chart(trades: list) -> go.Figure:
     return fig
 
 
+# ── 1. 相对 Alpha 曲线（策略 / BH 净值比） ────────────────────
+def relative_alpha_chart(df: pd.DataFrame) -> go.Figure:
+    bh    = STARTING_CAP * df["Close"] / df["Close"].iloc[0]
+    ratio = df["equity"] / bh
+    fig   = go.Figure()
+    above = ratio >= 1.0
+    fig.add_trace(go.Scatter(x=df.index, y=ratio, mode="lines",
+        line=dict(color="#00e676", width=1.8),
+        fill="tozeroy", fillcolor="rgba(0,230,118,0.05)",
+        name="策略 / BH 净值比"))
+    fig.add_hline(y=1.0, line=dict(color="rgba(255,255,255,0.35)", width=1.5, dash="dash"),
+                  annotation_text="平价线 (1.0)", annotation_font_color="#94a3b8",
+                  annotation_position="top right")
+    fig.update_layout(**_base_layout(height=220),
+                      yaxis=dict(gridcolor=GRID_COLOR, title="策略/BH 倍数",
+                                 tickformat=".2f"),
+                      xaxis=dict(gridcolor=GRID_COLOR))
+    return fig
+
+
+# ── 2. Underwater 连续回撤曲线 ────────────────────────────────
+def underwater_chart(df: pd.DataFrame) -> go.Figure:
+    dd = (df["equity"] - df["equity"].cummax()) / df["equity"].cummax() * 100
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=dd, mode="lines",
+        line=dict(color="#ff5252", width=1.5),
+        fill="tozeroy", fillcolor="rgba(255,82,82,0.08)",
+        name="水下回撤 %"))
+    fig.add_hline(y=-5,  line=dict(color="rgba(255,215,64,0.5)", width=1, dash="dot"),
+                  annotation_text="-5%", annotation_font_color="#ffd740")
+    fig.add_hline(y=-10, line=dict(color="rgba(255,82,82,0.5)", width=1, dash="dot"),
+                  annotation_text="-10%", annotation_font_color="#ff5252")
+    fig.update_layout(**_base_layout(height=200),
+                      yaxis=dict(gridcolor=GRID_COLOR, ticksuffix="%", title="回撤"),
+                      xaxis=dict(gridcolor=GRID_COLOR))
+    return fig
+
+
+# ── 3. 月度热力图（Strategy / BH / Alpha 三选项） ─────────────
+def monthly_heatmap_tabbed(monthly_df: pd.DataFrame) -> None:
+    MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    tab_s, tab_b, tab_a = st.tabs(["Strategy", "Buy & Hold", "Alpha"])
+    for tab, col_key, title in [
+        (tab_s, "ret",       "策略月度收益"),
+        (tab_b, "bh_ret",    "B&H 月度收益"),
+        (tab_a, "alpha_ret", "月度 Alpha（策略 - B&H）"),
+    ]:
+        with tab:
+            years = sorted(monthly_df["year"].unique())
+            z, text = [], []
+            for yr in years:
+                row_z, row_t = [], []
+                for mo in range(1, 13):
+                    val = monthly_df[
+                        (monthly_df["year"] == yr) & (monthly_df["month"] == mo)
+                    ][col_key]
+                    if len(val):
+                        v = float(val.iloc[0]); row_z.append(v); row_t.append(f"{v:+.1f}%")
+                    else:
+                        row_z.append(None); row_t.append("")
+                z.append(row_z); text.append(row_t)
+            fig = go.Figure(go.Heatmap(
+                z=z, x=MONTHS, y=[str(y) for y in years],
+                text=text, texttemplate="%{text}",
+                colorscale=[[0,"#7f1d1d"],[0.5,"#1e2130"],[1,"#14532d"]],
+                zmid=0, showscale=True,
+                colorbar=dict(ticksuffix="%", thickness=12, len=0.8,
+                              tickfont=dict(size=10, color="#64748b")),
+                hoverongaps=False))
+            fig.update_layout(**_base_layout(height=max(160, len(years)*46+60)),
+                              title=dict(text=title, font=dict(size=12, color="#94a3b8"),
+                                         x=0, xanchor="left"),
+                              xaxis=dict(side="top"),
+                              yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
+
+
+# ── 4. Regime Return Attribution（每个 HMM 状态的收益归因） ────
+def regime_attribution_chart(df: pd.DataFrame, trades: list) -> go.Figure:
+    if not trades:
+        return go.Figure()
+    tdf = pd.DataFrame(trades)
+    # attach regime label at entry time
+    regime_at_entry = df["regime_label"].reindex(tdf["entry_time"]).values
+    tdf["entry_regime"] = regime_at_entry
+    grp = tdf.groupby("entry_regime").agg(
+        count  =("pnl", "count"),
+        avg_pnl=("pnl", "mean"),
+        win_r  =("pnl", lambda x: (x > 0).mean() * 100),
+        total  =("pnl", "sum"),
+    ).reset_index()
+    grp = grp.sort_values("avg_pnl", ascending=True)
+    colors = [_regime_color(r) for r in grp["entry_regime"]]
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=("平均单笔盈亏 ($)", "胜率 (%)"),
+                        horizontal_spacing=0.10)
+    fig.add_trace(go.Bar(y=grp["entry_regime"], x=grp["avg_pnl"],
+        orientation="h", marker_color=colors, marker_opacity=0.85,
+        text=[f"${v:+,.0f}" for v in grp["avg_pnl"]], textposition="outside",
+        textfont=dict(size=10), name="平均PnL"), row=1, col=1)
+    fig.add_trace(go.Bar(y=grp["entry_regime"], x=grp["win_r"],
+        orientation="h", marker_color=colors, marker_opacity=0.6,
+        text=[f"{v:.0f}% ({c}笔)" for v, c in zip(grp["win_r"], grp["count"])],
+        textposition="outside", textfont=dict(size=10), name="胜率"), row=1, col=2)
+    layout = _base_layout(height=max(200, len(grp)*50+80))
+    layout["xaxis"]  = dict(gridcolor=GRID_COLOR, tickprefix="$", title="平均PnL")
+    layout["xaxis2"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="胜率", range=[0,110])
+    layout["yaxis"]  = dict(gridcolor=GRID_COLOR)
+    layout["yaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["showlegend"] = False
+    fig.update_layout(**layout)
+    return fig
+
+
+# ── 5. Exit Reason Breakdown ──────────────────────────────────
+def exit_attribution_chart(exit_attr: dict) -> go.Figure:
+    if not exit_attr:
+        return go.Figure()
+    reasons   = list(exit_attr.keys())
+    counts    = [exit_attr[r]["count"]   for r in reasons]
+    avg_pnls  = [exit_attr[r]["avg_pnl"] for r in reasons]
+    win_rates = [exit_attr[r]["win_r"]   for r in reasons]
+    total_pnl = [exit_attr[r]["total_pnl"] for r in reasons]
+    pnl_colors = ["#00e676" if v >= 0 else "#ff5252" for v in avg_pnls]
+    fig = make_subplots(rows=1, cols=3,
+                        subplot_titles=("出场次数", "平均盈亏 ($)", "胜率 (%)"),
+                        horizontal_spacing=0.08)
+    fig.add_trace(go.Bar(x=reasons, y=counts,
+        marker_color="#60a5fa", marker_opacity=0.8,
+        text=counts, textposition="outside",
+        textfont=dict(size=11), name="次数"), row=1, col=1)
+    fig.add_trace(go.Bar(x=reasons, y=avg_pnls,
+        marker_color=pnl_colors, marker_opacity=0.85,
+        text=[f"${v:+,.0f}" for v in avg_pnls], textposition="outside",
+        textfont=dict(size=10), name="平均PnL"), row=1, col=2)
+    wr_colors = ["#00e676" if v >= 50 else "#ff5252" for v in win_rates]
+    fig.add_trace(go.Bar(x=reasons, y=win_rates,
+        marker_color=wr_colors, marker_opacity=0.8,
+        text=[f"{v:.0f}%" for v in win_rates], textposition="outside",
+        textfont=dict(size=10), name="胜率"), row=1, col=3)
+    layout = _base_layout(height=300)
+    layout["xaxis"]  = dict(gridcolor=GRID_COLOR)
+    layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["xaxis3"] = dict(gridcolor=GRID_COLOR)
+    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, title="次数")
+    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, tickprefix="$", title="平均PnL")
+    layout["yaxis3"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="胜率", range=[0,110])
+    layout["showlegend"] = False
+    fig.update_layout(**layout)
+    return fig
+
+
+# ── 6. Top Trade Contribution ─────────────────────────────────
+def top_trade_chart(trades: list) -> go.Figure:
+    if not trades:
+        return go.Figure()
+    tdf = pd.DataFrame(trades).sort_values("pnl", ascending=False).reset_index(drop=True)
+    total_gross = tdf["pnl"].sum()
+    tdf["cum_contrib"] = tdf["pnl"].cumsum() / max(abs(total_gross), 1) * 100
+    top_n = min(20, len(tdf))
+    tdf_top = tdf.head(top_n)
+    bar_colors = ["#00e676" if v >= 0 else "#ff5252" for v in tdf_top["pnl"]]
+    labels = [f"T{i+1}" for i in range(top_n)]
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=(f"Top {top_n} 交易 PnL ($)", "累计贡献度 (%)"),
+                        horizontal_spacing=0.10)
+    fig.add_trace(go.Bar(x=labels, y=tdf_top["pnl"],
+        marker_color=bar_colors, marker_opacity=0.85,
+        text=[f"${v:+,.0f}" for v in tdf_top["pnl"]], textposition="outside",
+        textfont=dict(size=9), name="PnL"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=labels, y=tdf_top["cum_contrib"], mode="lines+markers",
+        line=dict(color="#a78bfa", width=2),
+        marker=dict(size=6, color="#a78bfa"),
+        name="累计贡献 %"), row=1, col=2)
+    fig.add_hline(y=80, line=dict(color="rgba(255,215,64,0.5)", width=1, dash="dot"),
+                  annotation_text="80%", annotation_font_color="#ffd740", row=1, col=2)
+    layout = _base_layout(height=280)
+    layout["xaxis"]  = dict(gridcolor=GRID_COLOR)
+    layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, tickprefix="$", title="PnL")
+    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="累计贡献 %")
+    layout["showlegend"] = False
+    fig.update_layout(**layout)
+    return fig
+
+
+# ── 7. 持仓时长分布 ───────────────────────────────────────────
+def hold_duration_chart(trades: list, is_daily: bool) -> go.Figure:
+    if not trades:
+        return go.Figure()
+    tdf = pd.DataFrame(trades)
+    unit = "days" if is_daily else "hours"
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=tdf["hold_bars"], nbinsx=20,
+        marker_color="#60a5fa", marker_opacity=0.8, name=f"持仓时长 ({unit})"))
+    avg_h = tdf["hold_bars"].mean()
+    fig.add_vline(x=avg_h, line=dict(color="#ffd740", width=1.5, dash="dash"),
+                  annotation_text=f"均值 {avg_h:.1f}", annotation_font_color="#ffd740")
+    fig.update_layout(**_base_layout(height=220),
+                      xaxis=dict(gridcolor=GRID_COLOR, title=f"持仓 ({unit})"),
+                      yaxis=dict(gridcolor=GRID_COLOR, title="笔数"),
+                      showlegend=False)
+    return fig
+
+
 # ──────────────────────────────────────────────────────────────
 # UI 组件
 # ──────────────────────────────────────────────────────────────
@@ -514,12 +719,14 @@ def render_asset(ticker: str) -> None:
     metrics  = res["metrics"]
     last     = df.iloc[-1]
     is_daily = res["is_daily"]
-    n_states = res.get("n_states", N_STATES)
-    min_conf = res.get("min_conf", MIN_CONFIRMATIONS)
-    bull_top = res.get("bull_top", 2)
-    stop     = res.get("stop", -0.08)
+    n_states   = res.get("n_states",   N_STATES)
+    min_conf   = res.get("min_conf",   MIN_CONFIRMATIONS)
+    bull_top   = res.get("bull_top",   2)
+    stop       = res.get("stop",       -0.08)
+    adx_thresh = 20
 
-    cur_regime = last["regime_label"]
+    cur_regime        = last["regime_label"]
+    cur_regime_filter = bool(last.get("regime_filter", False))
     cur_signal = "LONG" if (last["is_bull"] and last["signal_score"] >= min_conf) else "CASH"
 
     # ── 顶部三栏 ─────────────────────────────────────────────
@@ -537,12 +744,62 @@ def render_asset(ticker: str) -> None:
     with b2:
         pc = _pill(cur_regime)
         is_daily_txt = "日线" if is_daily else "1h"
+        posterior = res.get("posterior", [])
+        # determine action type
+        if cur_signal == "LONG":
+            action_type = "ENTRY"
+            action_color = "#00e676"
+        else:
+            action_type = "CASH"
+            action_color = "#64748b"
+        # risk status based on regime filter + regime
+        if "Bear" in cur_regime or "Crash" in cur_regime:
+            risk_status = "HIGH RISK"
+            risk_color  = "#ff5252"
+        elif not cur_regime_filter:
+            risk_status = "CAUTION"
+            risk_color  = "#ffd740"
+        else:
+            risk_status = "NORMAL"
+            risk_color  = "#00e676"
+        # posterior bar for current regime
+        n_post = len(posterior)
+        top_post_idx = int(np.argmax(posterior)) if posterior else 0
+        top_post_val = float(posterior[top_post_idx]) * 100 if posterior else 0.0
+        post_html = ""
+        if posterior:
+            post_html = '<div style="margin-top:6px;font-size:0.68rem;color:#475569">HMM 后验置信度（最新bar）</div>'
+            post_html += '<div style="display:flex;gap:3px;margin-top:3px;flex-wrap:wrap">'
+            for i, p in enumerate(posterior):
+                bar_pct = int(p * 100)
+                is_top  = (i == top_post_idx)
+                bar_col = "#00e676" if is_top else "rgba(96,165,250,0.4)"
+                post_html += (f'<div title="State {i}: {p*100:.1f}%" style="flex:1;min-width:16px">'
+                              f'<div style="background:{bar_col};height:{max(4,bar_pct//4)}px;border-radius:2px;opacity:0.85"></div>'
+                              f'<div style="font-size:0.55rem;color:#475569;text-align:center">{i}</div></div>')
+            post_html += '</div>'
+            post_html += f'<div style="font-size:0.68rem;color:#60a5fa;margin-top:2px">最高后验 State {top_post_idx}: {top_post_val:.1f}%</div>'
         st.markdown(f"""<div class="signal-cash">
-            <div class="signal-title">HMM 状态（Walk-Forward）</div>
-            <div style="margin-top:8px"><span class="regime-pill {pc}">{cur_regime}</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div>
+                    <div class="signal-title">HMM 状态（Walk-Forward）</div>
+                    <div style="margin-top:8px"><span class="regime-pill {pc}">{cur_regime}</span></div>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-size:0.6rem;color:#475569;text-transform:uppercase;letter-spacing:1px">Action</div>
+                    <div style="font-size:1.1rem;font-weight:800;color:{action_color}">{action_type}</div>
+                    <div style="font-size:0.62rem;color:{risk_color};margin-top:2px;font-weight:600">{risk_status}</div>
+                </div>
+            </div>
             <div style="margin-top:8px;font-size:0.72rem;color:#475569">
                 {n_states}状态 · {bull_top}入场 · 阈值{min_conf} · 止损{stop*100:.0f}% · {is_daily_txt} · {len(df):,} bars
             </div>
+            <div style="margin-top:4px;font-size:0.72rem">
+                Regime Filter（诊断层）：<span style="color:{'#00e676' if cur_regime_filter else '#ffd740'};font-weight:600">
+                {'✅ 趋势确认' if cur_regime_filter else '⚠️ 趋势待确认'}
+                </span>
+            </div>
+            {post_html}
         </div>""", unsafe_allow_html=True)
 
     with b3:
@@ -560,26 +817,34 @@ def render_asset(ticker: str) -> None:
         c12 = bool(last["cci"]           > 0)
         c13 = bool(last["obv"]           > last["obv_ema"])
         c14 = bool(last["pct_from_high"] > -30)
-        checks = [
+        # Core signals (trend & momentum) vs Confirmation signals (oscillator/volume)
+        core_checks = [
             ("RSI < 90",          c1,  f"{last['rsi']:.1f}"),
             ("动量 > 1%",         c2,  f"{last['momentum']:.2f}%"),
-            ("波动率 < 6%",       c3,  f"{last['volatility']:.2f}%"),
-            ("成交量 > SMA20",    c4,  "Yes" if c4  else "No"),
             ("ADX > 25",          c5,  f"{last['adx']:.1f}"),
             ("价格 > EMA 50",     c6,  f"${last['ema50']:,.2f}"),
             ("价格 > EMA 200",    c7,  f"${last['ema200']:,.2f}"),
             ("MACD > Signal",     c8,  "Yes" if c8  else "No"),
             ("价格 > BB 中轨",    c9,  f"${last['bb_mid']:,.2f}"),
+        ]
+        conf_checks = [
+            ("波动率 < 6%",       c3,  f"{last['volatility']:.2f}%"),
+            ("成交量 > SMA20",    c4,  "Yes" if c4  else "No"),
             ("Stoch %K↑ & <80",  c10, f"K={last['stoch_k']:.1f}"),
             ("Williams %R < -20", c11, f"{last['williams_r']:.1f}"),
             ("CCI > 0",           c12, f"{last['cci']:.1f}"),
             ("OBV > OBV EMA",     c13, "Yes" if c13 else "No"),
             ("距高点 > -30%",     c14, f"{last['pct_from_high']:.1f}%"),
         ]
-        n     = sum(v for _, v, _ in checks)
-        pct   = n / len(checks)
-        bar_w = int(pct * 100)
-        bar_c = _score_color(pct)
+        checks = core_checks + conf_checks
+        n_core = sum(v for _, v, _ in core_checks)
+        n_conf = sum(v for _, v, _ in conf_checks)
+        n      = n_core + n_conf
+        pct    = n / len(checks)
+        bar_w  = int(pct * 100)
+        bar_c  = _score_color(pct)
+        core_pct = n_core / len(core_checks)
+        conf_pct = n_conf / len(conf_checks)
         st.markdown(f"""<div class="glass-card" style="padding:14px 18px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <span style="font-size:0.72rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:500">
@@ -588,13 +853,20 @@ def render_asset(ticker: str) -> None:
                 <span style="font-size:1.1rem;font-weight:800;color:{bar_c}">{n}/{len(checks)}</span>
             </div>
             <div class="score-outer"><div class="score-inner" style="width:{bar_w}%;background:{bar_c};opacity:0.85"></div></div>
-            <div style="font-size:0.68rem;color:#475569;margin-bottom:10px">
-                {'✅ 满足入场条件' if n >= min_conf else f'⚠️ 还差 {min_conf - n} 条'}
+            <div style="display:flex;gap:12px;font-size:0.67rem;margin-bottom:8px;margin-top:3px">
+                <span>核心信号 <b style="color:{'#00e676' if core_pct>=0.7 else '#ffd740'}">{n_core}/{len(core_checks)}</b></span>
+                <span>确认信号 <b style="color:{'#60a5fa' if conf_pct>=0.6 else '#475569'}">{n_conf}/{len(conf_checks)}</b></span>
+                <span style="color:{'#00e676' if n>=min_conf else '#ff5252'}">
+                    {'✅ 满足入场条件' if n >= min_conf else f'⚠️ 还差 {min_conf - n} 条'}
+                </span>
             </div>""", unsafe_allow_html=True)
         col_a, col_b = st.columns(2)
-        half = len(checks) // 2
-        col_a.markdown("".join(_sig_row(nm, ok, vl) for nm, ok, vl in checks[:half]), unsafe_allow_html=True)
-        col_b.markdown("".join(_sig_row(nm, ok, vl) for nm, ok, vl in checks[half:]), unsafe_allow_html=True)
+        col_a.markdown(
+            '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">核心信号</div>' +
+            "".join(_sig_row(nm, ok, vl) for nm, ok, vl in core_checks), unsafe_allow_html=True)
+        col_b.markdown(
+            '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">确认信号</div>' +
+            "".join(_sig_row(nm, ok, vl) for nm, ok, vl in conf_checks), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
@@ -639,6 +911,36 @@ def render_asset(ticker: str) -> None:
     with cols2[2]: st.markdown(_metric("月度胜率",   f"{metrics['monthly_win_pct']:.1f}%",
                                                       f"交易胜率 {metrics['win_rate_pct']:.1f}%", "blue"), unsafe_allow_html=True)
     with cols2[3]: st.markdown(_metric("vs SPY Alpha", sa_v, sa_s, sa_c), unsafe_allow_html=True)
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
+    # ── 绩效指标 Row 3：新增高级指标 ─────────────────────────
+    cols3 = st.columns(4, gap="small")
+    so_c  = "green" if metrics["sortino"] > 1 else "yellow" if metrics["sortino"] > 0 else "red"
+    pf_c  = "green" if metrics["profit_factor"] > 1.5 else "yellow" if metrics["profit_factor"] > 1 else "red"
+    ex_c  = "green" if metrics["expectancy"] > 0 else "red"
+    tr_c  = "green" if metrics["tail_ratio"] > 1 else "yellow"
+    with cols3[0]: st.markdown(_metric("Sortino 比率",  f"{metrics['sortino']:.2f}",
+                                                         f"下行波动率标准化", so_c), unsafe_allow_html=True)
+    with cols3[1]: st.markdown(_metric("Profit Factor", f"{metrics['profit_factor']:.2f}",
+                                                         f"总盈利 / 总亏损", pf_c), unsafe_allow_html=True)
+    with cols3[2]: st.markdown(_metric("期望值/笔",     f"${metrics['expectancy']:+.0f}",
+                                                         f"盈亏比 {metrics['rr_ratio']:.2f}×", ex_c), unsafe_allow_html=True)
+    with cols3[3]: st.markdown(_metric("Tail Ratio",    f"{metrics['tail_ratio']:.2f}",
+                                                         "P95收益 / P5亏损", tr_c), unsafe_allow_html=True)
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
+    cols4 = st.columns(4, gap="small")
+    cl_c  = "green" if metrics["max_consec_loss"] <= 2 else "yellow" if metrics["max_consec_loss"] <= 4 else "red"
+    sk_c  = "green" if metrics["skewness"] > 0 else "yellow"
+    rc_label = f"{metrics['max_recovery_bars']}{'日' if is_daily else 'h'}"
+    with cols4[0]: st.markdown(_metric("最大连续亏损",  f"{metrics['max_consec_loss']} 笔",
+                                                         "连续止损次数上限", cl_c), unsafe_allow_html=True)
+    with cols4[1]: st.markdown(_metric("平均持仓",      f"{metrics['avg_hold_bars']:.0f} bars",
+                                                         f"平均仓位 {metrics['avg_pos_size_pct']:.0f}%", "blue"), unsafe_allow_html=True)
+    with cols4[2]: st.markdown(_metric("收益偏度",      f"{metrics['skewness']:+.2f}",
+                                                         f"峰度 {metrics['kurtosis']:.2f}", sk_c), unsafe_allow_html=True)
+    with cols4[3]: st.markdown(_metric("最长回撤修复",  rc_label,
+                                                         "峰值→修复所需时间", "yellow"), unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
     # ── 资金曲线 + 回撤 ──────────────────────────────────────
@@ -649,11 +951,19 @@ def render_asset(ticker: str) -> None:
     st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
     st.plotly_chart(rolling_sharpe_chart(df, is_daily), use_container_width=True)
 
-    # ── 月度热力图 + 状态分布 ────────────────────────────────
+    # ── Relative Alpha Curve ──────────────────────────────────
+    st.markdown('<div class="section-header">📐 相对 Alpha 曲线（策略净值 / B&H 净值）</div>', unsafe_allow_html=True)
+    st.plotly_chart(relative_alpha_chart(df), use_container_width=True)
+
+    # ── Underwater Plot ───────────────────────────────────────
+    st.markdown('<div class="section-header">🌊 Underwater 回撤曲线</div>', unsafe_allow_html=True)
+    st.plotly_chart(underwater_chart(df), use_container_width=True)
+
+    # ── 月度热力图（含 BH / Alpha 标签） + 状态分布 ──────────
     col_heat, col_dist = st.columns([3, 2], gap="medium")
     with col_heat:
-        st.markdown('<div class="section-header">🗓 月度收益热力图</div>', unsafe_allow_html=True)
-        st.plotly_chart(monthly_heatmap(metrics["monthly_df"]), use_container_width=True)
+        st.markdown('<div class="section-header">🗓 月度收益热力图（Strategy / B&H / Alpha）</div>', unsafe_allow_html=True)
+        monthly_heatmap_tabbed(metrics["monthly_df"])
     with col_dist:
         st.markdown('<div class="section-header">🧩 HMM 状态分布</div>', unsafe_allow_html=True)
         st.plotly_chart(regime_bar(df), use_container_width=True)
@@ -662,10 +972,39 @@ def render_asset(ticker: str) -> None:
     st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
     st.plotly_chart(regime_return_chart(df, n_states), use_container_width=True)
 
-    # ── 交易分析 ─────────────────────────────────────────────
+    # ── Regime Return Attribution ─────────────────────────────
     if trades:
-        st.markdown('<div class="section-header">🎯 交易分析：单笔盈亏 &amp; 持仓时长</div>', unsafe_allow_html=True)
-        st.plotly_chart(trade_analytics_chart(trades), use_container_width=True)
+        st.markdown('<div class="section-header">🔍 Regime 交易归因（各状态入场盈亏 & 胜率）</div>', unsafe_allow_html=True)
+        st.plotly_chart(regime_attribution_chart(df, trades), use_container_width=True)
+
+    # ── Exit Reason Breakdown ─────────────────────────────────
+    exit_attr = metrics.get("exit_attribution", {})
+    if exit_attr:
+        st.markdown('<div class="section-header">🚪 出场原因归因</div>', unsafe_allow_html=True)
+        st.plotly_chart(exit_attribution_chart(exit_attr), use_container_width=True)
+
+    # ── Top Trade Contribution ────────────────────────────────
+    if trades:
+        st.markdown('<div class="section-header">🏆 Top Trade 贡献度</div>', unsafe_allow_html=True)
+        m = metrics
+        top5_s  = f"{m['top5_contrib_pct']:.1f}%" if "top5_contrib_pct" in m else "N/A"
+        top10_s = f"{m['top10_contrib_pct']:.1f}%" if "top10_contrib_pct" in m else "N/A"
+        st.markdown(
+            f'<div style="font-size:0.75rem;color:#94a3b8;margin-bottom:4px">'
+            f'Top 5 交易贡献度 <b style="color:#ffd740">{top5_s}</b> &nbsp;·&nbsp; '
+            f'Top 10 交易贡献度 <b style="color:#ffd740">{top10_s}</b></div>',
+            unsafe_allow_html=True)
+        st.plotly_chart(top_trade_chart(trades), use_container_width=True)
+
+    # ── 交易分析（单笔盈亏）+ 持仓时长分布 ────────────────────
+    if trades:
+        c_pnl, c_hold = st.columns([1.4, 1], gap="medium")
+        with c_pnl:
+            st.markdown('<div class="section-header">🎯 单笔盈亏分析</div>', unsafe_allow_html=True)
+            st.plotly_chart(trade_analytics_chart(trades), use_container_width=True)
+        with c_hold:
+            st.markdown('<div class="section-header">⏱ 持仓时长分布</div>', unsafe_allow_html=True)
+            st.plotly_chart(hold_duration_chart(trades, is_daily), use_container_width=True)
 
     # ── 交易统计 + 风控参数 ───────────────────────────────────
     col_stats, col_risk = st.columns([1, 1], gap="medium")
@@ -690,37 +1029,67 @@ def render_asset(ticker: str) -> None:
 
     with col_risk:
         st.markdown('<div class="section-header">🛡 风控参数</div>', unsafe_allow_html=True)
+        cooldown_str = "2 日" if is_daily else "48 小时"
+        max_hold_str = f"{int(60 * res.get('hold_mult', 1.0))} 日" if is_daily else f"{int(24*30 * res.get('hold_mult', 1.0))} 小时"
         risk_items = [
-            ("HMM 状态数",  f"{n_states} States"),
-            ("入场状态数",  f"Top {bull_top}"),
-            ("信号阈值",    f"{min_conf} / 14"),
-            ("固定止损",    f"{stop*100:.0f}% / 笔"),
-            ("杠杆",        "2.5×"),
-            ("最小仓位",    "40%"),
-            ("最大仓位",    "100%"),
-            ("冷静期",      "48h / 2 日"),
-            ("HMM 训练",    "Walk-Forward"),
+            ("HMM 状态数",      f"{n_states} States"),
+            ("入场状态数",      f"Top {bull_top}"),
+            ("信号阈值",        f"{min_conf} / 14"),
+            ("固定止损",        f"{stop*100:.0f}%（触价退出）"),
+            ("Regime Filter",   f"诊断层 · ADX>{adx_thresh} + EMA50↑ + EMA50>EMA200"),
+            ("杠杆",            "固定 2.5×"),
+            ("冷静期",          cooldown_str),
+            ("最大持仓",        max_hold_str),
+            ("HMM 训练",        "Walk-Forward 滚动"),
+            ("仓位管理",        "信号强度线性 40%→100%"),
         ]
         st.markdown("".join(
             f'<div class="sig-row"><span class="sig-name">{k}</span>'
             f'<span class="sig-val">{v}</span></div>' for k, v in risk_items
         ), unsafe_allow_html=True)
 
-    # ── 完整交易记录 ─────────────────────────────────────────
+    # ── 完整交易记录（含筛选）────────────────────────────────
     if trades:
         st.markdown('<div class="section-header">📝 完整交易记录</div>', unsafe_allow_html=True)
-        tdf = pd.DataFrame(trades)
-        tdf["entry_time"]   = pd.to_datetime(tdf["entry_time"]).dt.strftime("%Y-%m-%d %H:%M")
-        tdf["exit_time"]    = pd.to_datetime(tdf["exit_time"]).dt.strftime("%Y-%m-%d %H:%M")
-        tdf["entry_price"]  = tdf["entry_price"].map("${:,.2f}".format)
-        tdf["exit_price"]   = tdf["exit_price"].map("${:,.2f}".format)
-        tdf["pnl"]          = tdf["pnl"].map("${:+,.2f}".format)
-        tdf["pos_size_pct"] = tdf["pos_size_pct"].map(lambda x: f"{x*100:.0f}%")
-        tdf["return_pct"]   = tdf["return_pct"].map(lambda x: f"{x:+.1f}%")
-        tdf = tdf[["entry_time","exit_time","entry_price","exit_price",
-                   "pos_size_pct","pnl","return_pct","hold_bars","exit_reason"]]
-        tdf.columns = ["入场时间","出场时间","入场价","出场价","仓位","盈亏","收益率","持仓bar","出场原因"]
-        st.dataframe(tdf, use_container_width=True, hide_index=True)
+        tdf_raw = pd.DataFrame(trades)
+        # attach regime at entry
+        tdf_raw["entry_regime"] = df["regime_label"].reindex(tdf_raw["entry_time"]).values
+
+        # ── 筛选器 ────────────────────────────────────────────
+        flt1, flt2, flt3 = st.columns([2, 2, 2], gap="small")
+        with flt1:
+            exit_reasons = ["全部"] + sorted(tdf_raw["exit_reason"].unique().tolist())
+            sel_exit = st.selectbox("出场原因", exit_reasons, key=f"exit_flt_{ticker}")
+        with flt2:
+            regimes_opts = ["全部"] + sorted(tdf_raw["entry_regime"].dropna().unique().tolist())
+            sel_regime = st.selectbox("入场 Regime", regimes_opts, key=f"regime_flt_{ticker}")
+        with flt3:
+            pnl_filter = st.selectbox("盈亏方向", ["全部", "仅盈利", "仅亏损"], key=f"pnl_flt_{ticker}")
+
+        tdf_flt = tdf_raw.copy()
+        if sel_exit != "全部":
+            tdf_flt = tdf_flt[tdf_flt["exit_reason"] == sel_exit]
+        if sel_regime != "全部":
+            tdf_flt = tdf_flt[tdf_flt["entry_regime"] == sel_regime]
+        if pnl_filter == "仅盈利":
+            tdf_flt = tdf_flt[tdf_flt["pnl"] > 0]
+        elif pnl_filter == "仅亏损":
+            tdf_flt = tdf_flt[tdf_flt["pnl"] <= 0]
+
+        st.caption(f"显示 {len(tdf_flt)} / {len(tdf_raw)} 笔交易")
+
+        tdf_show = tdf_flt.copy()
+        tdf_show["entry_time"]   = pd.to_datetime(tdf_show["entry_time"]).dt.strftime("%Y-%m-%d %H:%M")
+        tdf_show["exit_time"]    = pd.to_datetime(tdf_show["exit_time"]).dt.strftime("%Y-%m-%d %H:%M")
+        tdf_show["entry_price"]  = tdf_show["entry_price"].map("${:,.2f}".format)
+        tdf_show["exit_price"]   = tdf_show["exit_price"].map("${:,.2f}".format)
+        tdf_show["pnl"]          = tdf_show["pnl"].map("${:+,.2f}".format)
+        tdf_show["pos_size_pct"] = tdf_show["pos_size_pct"].map(lambda x: f"{x*100:.0f}%")
+        tdf_show["return_pct"]   = tdf_show["return_pct"].map(lambda x: f"{x:+.1f}%")
+        tdf_show = tdf_show[["entry_time","exit_time","entry_regime","entry_price","exit_price",
+                              "pos_size_pct","pnl","return_pct","hold_bars","exit_reason"]]
+        tdf_show.columns = ["入场时间","出场时间","入场Regime","入场价","出场价","仓位","盈亏","收益率","持仓bar","出场原因"]
+        st.dataframe(tdf_show, use_container_width=True, hide_index=True)
 
 
 # ──────────────────────────────────────────────────────────────

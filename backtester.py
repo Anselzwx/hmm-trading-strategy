@@ -180,6 +180,9 @@ def compute_indicators(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
                      (df["Low"]-c.shift()).abs()], axis=1).max(axis=1)
     out["atr"] = tr.ewm(span=14, adjust=False).mean()
 
+    ema50 = out["ema50"]
+    out["ema50_slope"] = (ema50 - ema50.shift(5)) / ema50.shift(5) * 100
+
     return out
 
 
@@ -377,6 +380,11 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     df["signal_score"] = score
     df["tech_signal"]  = score >= min_conf
 
+    # Regime Filter（诊断层，不影响进场）
+    ma_ok  = (df["ema50"] > df["ema200"]) & (df["ema50_slope"] > 0)
+    adx_ok = df["adx"] > 20
+    df["regime_filter"] = (ma_ok & adx_ok).fillna(False)
+
     equity_curve, trades = _simulate(df, is_daily, stop, hold_mult, min_conf)
     df["equity"] = equity_curve
 
@@ -385,6 +393,12 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     full_model              = fit_hmm(features, n_states)
     bull_states, bear_state = identify_states(full_model, bull_top)
     regime_labels           = {s: _label(s) for s in range(n_states)}
+
+    # HMM 后验概率（最新 bar）
+    try:
+        posterior = full_model.predict_proba(features[-1:]).flatten().tolist()
+    except Exception:
+        posterior = [1.0/n_states] * n_states
 
     return {
         "df":            df,
@@ -399,6 +413,7 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
         "bull_top":      bull_top,
         "min_conf":      min_conf,
         "stop":          stop,
+        "posterior":     posterior,
     }
 
 
@@ -430,16 +445,94 @@ def _compute_metrics(df: pd.DataFrame, trades: list,
     losses      = [t for t in trades if t["pnl"] <= 0]
     win_rate    = len(wins) / len(trades) * 100 if trades else 0.0
 
+    avg_win  = float(np.mean([t["pnl"] for t in wins]))   if wins   else 0.0
+    avg_loss = float(np.mean([t["pnl"] for t in losses])) if losses else 0.0
+    rr_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else float("inf")
+    avg_pos_size = np.mean([t["pos_size_pct"] for t in trades]) * 100 if trades else 0.0
+
+    # Sortino（仅下行波动）
+    downside = pct_returns.clip(upper=0)
+    down_vol = downside.std() * np.sqrt(bars_per_yr) * 100
+    sortino  = ann_ret / down_vol if down_vol > 0 else 0.0
+
+    # Profit Factor
+    gross_profit = sum(t["pnl"] for t in wins)
+    gross_loss   = abs(sum(t["pnl"] for t in losses))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
+
+    # Expectancy per trade
+    expectancy = (win_rate / 100 * avg_win + (1 - win_rate / 100) * avg_loss) if trades else 0.0
+
+    # 最大连续亏损
+    max_consec_loss = cur_consec = 0
+    for t in trades:
+        if t["pnl"] <= 0:
+            cur_consec += 1
+            max_consec_loss = max(max_consec_loss, cur_consec)
+        else:
+            cur_consec = 0
+
+    # 平均持仓周期
+    avg_hold = float(np.mean([t["hold_bars"] for t in trades])) if trades else 0.0
+
+    # Tail Ratio
+    if len(pct_returns) > 20:
+        p95 = float(np.percentile(pct_returns, 95))
+        p05 = abs(float(np.percentile(pct_returns, 5)))
+        tail_ratio = p95 / p05 if p05 > 0 else float("inf")
+    else:
+        tail_ratio = 1.0
+
+    # 收益分布偏度/峰度
+    skewness = float(pct_returns.skew())
+    kurtosis = float(pct_returns.kurt())
+
+    # 最大回撤恢复时间
+    in_dd = False; dd_start = 0; max_recovery = 0
+    eq_vals = equity.values; eq_max = equity.cummax().values
+    for i, (v, mx) in enumerate(zip(eq_vals, eq_max)):
+        if v < mx and not in_dd:
+            in_dd = True; dd_start = i
+        elif v >= mx and in_dd:
+            max_recovery = max(max_recovery, i - dd_start)
+            in_dd = False
+
+    # Top Trade 贡献度
+    all_pnl = sorted([t["pnl"] for t in trades], reverse=True)
+    total_gross = sum(all_pnl) if all_pnl else 1
+    top5_contrib  = sum(all_pnl[:5])  / max(total_gross, 1) * 100 if len(all_pnl) >= 1 else 0
+    top10_contrib = sum(all_pnl[:10]) / max(total_gross, 1) * 100 if len(all_pnl) >= 1 else 0
+
+    # 月度数据（含 BH 对比）
     monthly_eq  = equity.resample("ME").last()
     monthly_ret = monthly_eq.pct_change().dropna()
     monthly_win = (monthly_ret > 0).sum() / len(monthly_ret) * 100 if len(monthly_ret) > 0 else 0.0
 
-    monthly_pct = monthly_ret * 100
-    monthly_df  = pd.DataFrame({
-        "year":  monthly_pct.index.year,
-        "month": monthly_pct.index.month,
-        "ret":   monthly_pct.values,
+    bh_price     = df["Close"].resample("ME").last()
+    bh_monthly   = bh_price.pct_change().dropna() * 100
+    strat_monthly = monthly_ret * 100
+
+    monthly_df = pd.DataFrame({
+        "year":       strat_monthly.index.year,
+        "month":      strat_monthly.index.month,
+        "ret":        strat_monthly.values,
     })
+    # 对齐 BH 月度
+    bh_aligned = bh_monthly.reindex(strat_monthly.index).fillna(0)
+    monthly_df["bh_ret"]    = bh_aligned.values
+    monthly_df["alpha_ret"] = monthly_df["ret"] - monthly_df["bh_ret"]
+
+    # 出场原因归因
+    exit_attr = {}
+    if trades:
+        tdf = pd.DataFrame(trades)
+        for reason, grp in tdf.groupby("exit_reason"):
+            exit_attr[reason] = {
+                "count":   len(grp),
+                "win_r":   round((grp["pnl"] > 0).mean() * 100, 1),
+                "avg_pnl": round(grp["pnl"].mean(), 1),
+                "total_pnl": round(grp["pnl"].sum(), 1),
+            }
 
     try:
         spy_df    = fetch_data("SPY")
@@ -449,29 +542,36 @@ def _compute_metrics(df: pd.DataFrame, trades: list,
         spy_bh    = None
         spy_alpha = None
 
-    avg_win  = np.mean([t["pnl"] for t in wins])   if wins   else 0
-    avg_loss = np.mean([t["pnl"] for t in losses]) if losses else 0
-    rr_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else float("inf")
-    avg_pos_size = np.mean([t["pos_size_pct"] for t in trades]) * 100 if trades else 0
-
     return {
-        "total_return_pct":  round(total_ret,    2),
-        "ann_return_pct":    round(ann_ret,       2),
-        "bh_return_pct":     round(bh_ret,        2),
-        "alpha_pct":         round(alpha,          2),
-        "spy_bh_pct":        round(spy_bh,         2) if spy_bh  is not None else None,
-        "spy_alpha_pct":     round(spy_alpha,      2) if spy_alpha is not None else None,
-        "max_drawdown_pct":  round(max_dd,         2),
-        "sharpe":            round(sharpe,          3),
-        "calmar":            round(calmar,          3),
-        "ann_vol_pct":       round(ann_vol,         2),
-        "win_rate_pct":      round(win_rate,        2),
-        "monthly_win_pct":   round(monthly_win,     2),
+        "total_return_pct":  round(total_ret,      2),
+        "ann_return_pct":    round(ann_ret,         2),
+        "bh_return_pct":     round(bh_ret,          2),
+        "alpha_pct":         round(alpha,            2),
+        "spy_bh_pct":        round(spy_bh,           2) if spy_bh   is not None else None,
+        "spy_alpha_pct":     round(spy_alpha,        2) if spy_alpha is not None else None,
+        "max_drawdown_pct":  round(max_dd,           2),
+        "max_recovery_bars": max_recovery,
+        "sharpe":            round(sharpe,            3),
+        "sortino":           round(sortino,           3),
+        "calmar":            round(calmar,            3),
+        "tail_ratio":        round(min(tail_ratio, 99.0), 3),
+        "ann_vol_pct":       round(ann_vol,           2),
+        "win_rate_pct":      round(win_rate,          2),
+        "monthly_win_pct":   round(monthly_win,       2),
         "n_trades":          len(trades),
-        "avg_win":           round(avg_win,          2),
-        "avg_loss":          round(avg_loss,         2),
-        "rr_ratio":          round(rr_ratio,         3),
-        "avg_pos_size_pct":  round(avg_pos_size,    1),
-        "final_capital":     round(equity.iloc[-1],  2),
+        "avg_win":           round(avg_win,           2),
+        "avg_loss":          round(avg_loss,          2),
+        "rr_ratio":          round(rr_ratio,          3),
+        "profit_factor":     round(min(profit_factor, 99.0), 3),
+        "expectancy":        round(expectancy,        2),
+        "max_consec_loss":   max_consec_loss,
+        "avg_hold_bars":     round(avg_hold,          1),
+        "skewness":          round(skewness,          3),
+        "kurtosis":          round(kurtosis,          3),
+        "avg_pos_size_pct":  round(avg_pos_size,     1),
+        "final_capital":     round(equity.iloc[-1],   2),
+        "top5_contrib_pct":  round(top5_contrib,     1),
+        "top10_contrib_pct": round(top10_contrib,    1),
         "monthly_df":        monthly_df,
+        "exit_attribution":  exit_attr,
     }
