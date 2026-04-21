@@ -10,11 +10,21 @@ import pandas as pd
 import numpy as np
 import os
 import pickle
+import base64
 
 from data_loader import fetch_data
 from backtester  import run_backtest, STARTING_CAP, MIN_CONFIRMATIONS, _position_size, N_STATES
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
+ASSETS_DIR  = os.path.join(os.path.dirname(__file__), "assets")
+
+
+def _logo_b64() -> str:
+    path = os.path.join(ASSETS_DIR, "logo.png")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return ""
 
 
 def _safe_filename(ticker: str) -> str:
@@ -877,10 +887,28 @@ def render_asset(ticker: str) -> None:
 # ──────────────────────────────────────────────────────────────
 
 def main() -> None:
+    logo = _logo_b64()
+    logo_html = (
+        f'<img src="data:image/png;base64,{logo}" '
+        f'style="height:44px;width:44px;border-radius:10px;object-fit:cover;'
+        f'box-shadow:0 0 16px rgba(255,255,255,0.08);flex-shrink:0;" />'
+        if logo else ""
+    )
+
     hc1, hc2 = st.columns([8, 1])
     with hc1:
-        st.markdown('<div class="page-title">📈 Regime-Based HMM Trading Dashboard</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="page-sub">9-State Gaussian HMM &nbsp;·&nbsp; 14-Signal Voting &nbsp;·&nbsp; 2.5× Leverage &nbsp;·&nbsp; Walk-Forward &nbsp;·&nbsp; 数据截至 {_computed_at()}</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:2px">
+            {logo_html}
+            <div>
+                <div class="page-title">Regime-Based HMM Trading Dashboard</div>
+                <div style="font-size:0.62rem;color:#334155;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;margin-top:1px">LILYN &nbsp;·&nbsp; AI Quant Strategy</div>
+            </div>
+        </div>
+        <div class="page-sub" style="margin-left:{58 if logo else 0}px">
+            9-State Gaussian HMM &nbsp;·&nbsp; 14-Signal Voting &nbsp;·&nbsp;
+            2.5× Leverage &nbsp;·&nbsp; Walk-Forward &nbsp;·&nbsp; 数据截至 {_computed_at()}
+        </div>""", unsafe_allow_html=True)
     with hc2:
         st.write("")
         st.write("")
