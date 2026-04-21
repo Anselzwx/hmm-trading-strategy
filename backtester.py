@@ -6,6 +6,7 @@ backtester.py  —  Phase 1 升级版
   2. 固定止损 -8%（兜底风控）
   3. 信号强度仓位管理（得分越高仓位越大）
   4. 夏普比率 / 卡玛比率 / 月度胜率 / SPY Alpha
+  5. 每个 ticker 独立最优参数
 """
 
 from __future__ import annotations
@@ -23,57 +24,62 @@ warnings.filterwarnings("ignore")
 
 
 # ============================================================
-# 常量
+# 全局默认常量
 # ============================================================
 N_STATES          = 7
 LEVERAGE          = 2.5
 STARTING_CAP      = 10_000.0
-MIN_CONFIRMATIONS = 9        # 14 条信号中至少满足 9 条才入场
+MIN_CONFIRMATIONS = 9
 TOTAL_SIGNALS     = 14
 RANDOM_SEED       = 42
-STOP_LOSS_PCT     = -0.08    # 固定止损：单笔亏损超过 -8% 立即出场
+STOP_LOSS_PCT     = -0.08
 
-# 冷静期 & 最长持仓
 COOLDOWN_HOURLY = 48
 COOLDOWN_DAILY  = 2
 MAX_HOLD_HOURLY = 24 * 30
 MAX_HOLD_DAILY  = 60
 
-# Walk-Forward 参数
-WF_TRAIN_RATIO  = 0.6        # 60% 训练，40% 测试（滚动）
-WF_STEP_RATIO   = 0.1        # 每次向前滚动 10%
+WF_TRAIN_RATIO  = 0.6
+WF_STEP_RATIO   = 0.1
+
+# ── 每个 ticker 独立最优参数（经 Walk-Forward 验证）──────────
+# n_states: HMM状态数
+# bull_top: 入场状态数（rank从高到低前N个）
+# min_conf: 信号阈值
+# stop:     止损比例
+# hold_mult: 最大持仓倍数（相对全局MAX_HOLD）
+TICKER_PARAMS: Dict[str, Dict] = {
+    "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.06, "hold_mult": 0.75},
+    "GC=F": {"n_states": 7, "bull_top": 2, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.0},
+    "SI=F": {"n_states": 7, "bull_top": 1, "min_conf": 7,  "stop": -0.06, "hold_mult": 1.0},
+}
 
 
 # ============================================================
 # 1. HMM 引擎
 # ============================================================
 
-def fit_hmm(features: np.ndarray) -> hmm.GaussianHMM:
+def fit_hmm(features: np.ndarray, n_states: int = N_STATES) -> hmm.GaussianHMM:
     model = hmm.GaussianHMM(
-        n_components=N_STATES,
+        n_components=n_states,
         covariance_type="full",
         n_iter=200,
         tol=1e-4,
         random_state=RANDOM_SEED,
     )
     model.fit(features)
-    # 修复转移矩阵空行（小样本 Walk-Forward 窗口可能产生）
     tm = model.transmat_
     row_sums = tm.sum(axis=1, keepdims=True)
     zero_rows = (row_sums == 0).flatten()
-    tm[zero_rows] = 1.0 / N_STATES          # 未观测到的状态均匀分布
+    tm[zero_rows] = 1.0 / n_states
     model.transmat_ = tm / tm.sum(axis=1, keepdims=True)
     return model
 
 
-def identify_states(model: hmm.GaussianHMM) -> Tuple[List[int], int]:
-    """
-    bull_states : 收益率最高的 2 个状态
-    bear_state  : 收益率最低的状态
-    """
+def identify_states(model: hmm.GaussianHMM, bull_top: int = 2) -> Tuple[List[int], int]:
     mean_returns = model.means_[:, 0]
     ranked       = np.argsort(mean_returns)[::-1]
-    return ranked[:2].tolist(), int(ranked[-1])
+    return ranked[:bull_top].tolist(), int(ranked[-1])
 
 
 def decode_regimes(model: hmm.GaussianHMM, features: np.ndarray) -> np.ndarray:
@@ -106,7 +112,7 @@ def _adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return dx.ewm(span=period, adjust=False).mean()
 
 def _macd(s: pd.Series) -> Tuple[pd.Series, pd.Series]:
-    line   = _ema(s, 12) - _ema(s, 26)
+    line = _ema(s, 12) - _ema(s, 26)
     return line, _ema(line, 9)
 
 def _vol_pct(s: pd.Series, window: int, is_daily: bool) -> pd.Series:
@@ -169,7 +175,6 @@ def compute_indicators(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     roll_hi  = c.rolling(min(lookback, len(c)), min_periods=20).max()
     out["pct_from_high"] = (c - roll_hi) / roll_hi * 100
 
-    # ATR（用于止损计算）
     tr  = pd.concat([(df["High"]-df["Low"]),
                      (df["High"]-c.shift()).abs(),
                      (df["Low"]-c.shift()).abs()], axis=1).max(axis=1)
@@ -179,7 +184,7 @@ def compute_indicators(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
 
 
 # ============================================================
-# 3. 投票信号 — 返回 (bool_series, score_series)
+# 3. 投票信号
 # ============================================================
 
 def compute_signals(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
@@ -202,15 +207,8 @@ def compute_signals(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
     return score >= MIN_CONFIRMATIONS, score
 
 
-def _position_size(score: float) -> float:
-    """
-    仓位管理：根据信号得分线性映射仓位比例。
-    score=9  → 40%
-    score=12 → 70%
-    score=14 → 100%
-    低于 MIN_CONFIRMATIONS 不入场。
-    """
-    min_s, max_s = MIN_CONFIRMATIONS, TOTAL_SIGNALS
+def _position_size(score: float, min_conf: int = MIN_CONFIRMATIONS) -> float:
+    min_s, max_s = min_conf, TOTAL_SIGNALS
     min_sz, max_sz = 0.40, 1.00
     ratio = (score - min_s) / max(max_s - min_s, 1)
     return float(np.clip(min_sz + ratio * (max_sz - min_sz), min_sz, max_sz))
@@ -222,35 +220,28 @@ def _position_size(score: float) -> float:
 
 def _walk_forward_states(features: np.ndarray,
                           n_total: int,
+                          n_states: int = N_STATES,
                           train_ratio: float = WF_TRAIN_RATIO,
                           step_ratio:  float = WF_STEP_RATIO) -> np.ndarray:
-    """
-    滚动窗口训练 HMM，对每个 bar 使用「该 bar 之前」的数据训练的模型预测。
-    返回长度 = n_total 的 state_seq（前 train_size 个 bar 用全量模型填充）。
-    """
-    min_train  = max(N_STATES * 20, 60)     # HMM 最小训练样本
+    min_train  = max(n_states * 20, 60)
     train_size = max(int(n_total * train_ratio), min_train)
     train_size = min(train_size, n_total - 1)
     step_size  = max(int(n_total * step_ratio), 1)
     state_seq  = np.full(n_total, -1, dtype=int)
 
-    # 先用前 train_size 条数据训练一个基准模型，预测这段
-    base_model = fit_hmm(features[:train_size])
-    state_seq[:train_size] = base_model.predict(features[:train_size])
+    base_model = fit_hmm(features[:train_size], n_states)
+    mr0   = base_model.means_[:, 0]
+    rmap0 = {old: new for new, old in enumerate(np.argsort(mr0))}
+    state_seq[:train_size] = [rmap0[p] for p in base_model.predict(features[:train_size])]
 
-    # 滚动向前
     cursor = train_size
     while cursor < n_total:
-        end = min(cursor + step_size, n_total)
-        model = fit_hmm(features[:cursor])          # 只用 cursor 之前的数据
+        end   = min(cursor + step_size, n_total)
+        model = fit_hmm(features[:cursor], n_states)
         preds = model.predict(features[cursor:end])
-
-        # 对齐状态标签（HMM 状态编号可能每次不同，按均值 return 排序对齐）
-        # 直接用 mean return 排序重映射到 {0=最差,…,N-1=最好}
-        mr     = model.means_[:, 0]
-        remap  = {old: new for new, old in enumerate(np.argsort(mr))}
-        preds  = np.array([remap[p] for p in preds])
-        state_seq[cursor:end] = preds
+        mr    = model.means_[:, 0]
+        remap = {old: new for new, old in enumerate(np.argsort(mr))}
+        state_seq[cursor:end] = [remap[p] for p in preds]
         cursor = end
 
     return state_seq
@@ -262,13 +253,11 @@ def _walk_forward_states(features: np.ndarray,
 
 def _simulate(df: pd.DataFrame,
               is_daily: bool,
-              use_wf_states: bool = True) -> Tuple[list, list]:
-    """
-    运行完整模拟，返回 (equity_curve, trades)。
-    df 必须已包含 is_bull / is_bear / tech_signal / signal_score 列。
-    """
+              stop_loss_pct: float = STOP_LOSS_PCT,
+              hold_mult: float = 1.0,
+              min_conf: int = MIN_CONFIRMATIONS) -> Tuple[list, list]:
     cooldown_max = COOLDOWN_DAILY  if is_daily else COOLDOWN_HOURLY
-    max_hold     = MAX_HOLD_DAILY  if is_daily else MAX_HOLD_HOURLY
+    max_hold     = int((MAX_HOLD_DAILY if is_daily else MAX_HOLD_HOURLY) * hold_mult)
 
     capital       = STARTING_CAP
     position      = 0.0
@@ -286,13 +275,13 @@ def _simulate(df: pd.DataFrame,
 
         if in_trade:
             hold_bars += 1
-            current_ret = (price - entry_price) / entry_price  # 未杠杆收益率
+            current_ret = (price - entry_price) / entry_price
 
             exit_reason = None
             if row["is_bear"]:
                 exit_reason = "Regime → Bear/Crash"
-            elif current_ret <= STOP_LOSS_PCT:
-                exit_reason = f"Stop Loss ({STOP_LOSS_PCT*100:.0f}%)"
+            elif current_ret <= stop_loss_pct:
+                exit_reason = f"Stop Loss ({stop_loss_pct*100:.0f}%)"
             elif hold_bars >= max_hold:
                 exit_reason = f"Max Hold ({max_hold} bars)"
 
@@ -300,15 +289,15 @@ def _simulate(df: pd.DataFrame,
                 pnl_lev  = (price - entry_price) * position * LEVERAGE
                 capital += pnl_lev
                 trades.append({
-                    "entry_time":    entry_time,
-                    "exit_time":     ts,
-                    "entry_price":   entry_price,
-                    "exit_price":    price,
-                    "pnl":           pnl_lev,
-                    "pos_size_pct":  pos_size_pct,
-                    "exit_reason":   exit_reason,
-                    "hold_bars":     hold_bars,
-                    "return_pct":    current_ret * 100 * LEVERAGE,
+                    "entry_time":   entry_time,
+                    "exit_time":    ts,
+                    "entry_price":  entry_price,
+                    "exit_price":   price,
+                    "pnl":          pnl_lev,
+                    "pos_size_pct": pos_size_pct,
+                    "exit_reason":  exit_reason,
+                    "hold_bars":    hold_bars,
+                    "return_pct":   current_ret * 100 * LEVERAGE,
                 })
                 position, in_trade, hold_bars = 0.0, False, 0
                 cooldown_left = cooldown_max
@@ -316,9 +305,9 @@ def _simulate(df: pd.DataFrame,
         if cooldown_left > 0:
             cooldown_left -= 1
 
-        if not in_trade and cooldown_left == 0 and row["is_bull"] and row["tech_signal"]:
+        if not in_trade and cooldown_left == 0 and row["is_bull"] and row["signal_score"] >= min_conf:
             score        = float(row["signal_score"])
-            pos_size_pct = _position_size(score)
+            pos_size_pct = _position_size(score, min_conf)
             capital_used = capital * pos_size_pct
             position     = capital_used / price
             entry_price  = price
@@ -326,15 +315,9 @@ def _simulate(df: pd.DataFrame,
             in_trade     = True
             hold_bars    = 0
 
-        # MTM equity
-        if in_trade:
-            unrealised = (price - entry_price) * position * LEVERAGE
-            mtm        = capital + unrealised
-        else:
-            mtm = capital
+        mtm = capital + (price - entry_price) * position * LEVERAGE if in_trade else capital
         equity_curve.append(mtm)
 
-    # 收盘强平
     if in_trade:
         last_price = float(df["Close"].iloc[-1])
         pnl_lev    = (last_price - entry_price) * position * LEVERAGE
@@ -360,42 +343,48 @@ def _simulate(df: pd.DataFrame,
 
 def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     is_daily = ticker in DAILY_TICKERS
+    p        = TICKER_PARAMS.get(ticker, {"n_states": N_STATES, "bull_top": 2,
+                                          "min_conf": MIN_CONFIRMATIONS,
+                                          "stop": STOP_LOSS_PCT, "hold_mult": 1.0})
+    n_states = p["n_states"]
+    bull_top = p["bull_top"]
+    min_conf = p["min_conf"]
+    stop     = p["stop"]
+    hold_mult = p["hold_mult"]
+
     features = get_hmm_features(df)
     n        = len(features)
 
-    # ── Walk-Forward 状态序列 ────────────────────────────────
-    wf_states = _walk_forward_states(features, n)
+    wf_states = _walk_forward_states(features, n, n_states)
 
-    # Walk-Forward 状态：0=worst … N-1=best（已按 mean_return 排序）
-    # bull = top 2，bear = 0
     df = df.copy()
     df["state"]   = wf_states
-    df["is_bull"] = df["state"].isin([N_STATES-1, N_STATES-2])
+    df["is_bull"] = df["state"] >= (n_states - bull_top)
     df["is_bear"] = df["state"] == 0
 
     def _label(s: int) -> str:
-        if s == N_STATES-1: return "Bull Run"
-        if s == N_STATES-2: return "Bull+"
-        if s == 0:          return "Bear/Crash"
+        if s == n_states - 1: return "Bull Run"
+        if s == n_states - 2: return "Bull+"
+        if s == n_states - 3: return "Warming Up"
+        if s == 0:            return "Bear/Crash"
+        if s == 1:            return "Bear"
         return f"Neutral-{s}"
 
     df["regime_label"] = df["state"].apply(_label)
 
-    # ── 技术指标 & 信号 ───────────────────────────────────────
     df = compute_indicators(df, ticker)
-    df["tech_signal"], df["signal_score"] = compute_signals(df)
+    _, score = compute_signals(df)
+    df["signal_score"] = score
+    df["tech_signal"]  = score >= min_conf
 
-    # ── 模拟 ──────────────────────────────────────────────────
-    equity_curve, trades = _simulate(df, is_daily)
+    equity_curve, trades = _simulate(df, is_daily, stop, hold_mult, min_conf)
     df["equity"] = equity_curve
 
-    # ── 指标 ──────────────────────────────────────────────────
     metrics = _compute_metrics(df, trades, ticker, is_daily)
 
-    # ── 最终模型（用全量数据，仅供 UI 展示用）────────────────
-    full_model              = fit_hmm(features)
-    bull_states, bear_state = identify_states(full_model)
-    regime_labels           = {s: _label(s) for s in range(N_STATES)}
+    full_model              = fit_hmm(features, n_states)
+    bull_states, bear_state = identify_states(full_model, bull_top)
+    regime_labels           = {s: _label(s) for s in range(n_states)}
 
     return {
         "df":            df,
@@ -406,11 +395,15 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
         "regime_labels": regime_labels,
         "model":         full_model,
         "is_daily":      is_daily,
+        "n_states":      n_states,
+        "bull_top":      bull_top,
+        "min_conf":      min_conf,
+        "stop":          stop,
     }
 
 
 # ============================================================
-# 7. 绩效指标（Phase 1 升级）
+# 7. 绩效指标
 # ============================================================
 
 def _compute_metrics(df: pd.DataFrame, trades: list,
@@ -418,37 +411,29 @@ def _compute_metrics(df: pd.DataFrame, trades: list,
     equity   = pd.Series(df["equity"].values, index=df.index)
     n_bars   = len(equity)
 
-    # ── 基础收益 ─────────────────────────────────────────────
     total_ret   = (equity.iloc[-1] / STARTING_CAP - 1) * 100
     bh_ret      = (df["Close"].iloc[-1] / df["Close"].iloc[0] - 1) * 100
     alpha       = total_ret - bh_ret
 
-    # ── 最大回撤 ─────────────────────────────────────────────
     roll_max    = equity.cummax()
     dd_series   = (equity - roll_max) / roll_max * 100
     max_dd      = dd_series.min()
 
-    # ── 年化收益 & 夏普比率 ──────────────────────────────────
     bars_per_yr = 252 if is_daily else 252 * 24
     pct_returns = equity.pct_change().dropna()
     ann_ret     = ((equity.iloc[-1] / STARTING_CAP) ** (bars_per_yr / n_bars) - 1) * 100
     ann_vol     = pct_returns.std() * np.sqrt(bars_per_yr) * 100
     sharpe      = ann_ret / ann_vol if ann_vol > 0 else 0.0
-
-    # ── 卡玛比率 ─────────────────────────────────────────────
     calmar      = ann_ret / abs(max_dd) if max_dd != 0 else 0.0
 
-    # ── 交易胜率 & 月度胜率 ──────────────────────────────────
     wins        = [t for t in trades if t["pnl"] > 0]
     losses      = [t for t in trades if t["pnl"] <= 0]
     win_rate    = len(wins) / len(trades) * 100 if trades else 0.0
 
-    # 月度胜率：按月统计策略收益正负
     monthly_eq  = equity.resample("ME").last()
     monthly_ret = monthly_eq.pct_change().dropna()
     monthly_win = (monthly_ret > 0).sum() / len(monthly_ret) * 100 if len(monthly_ret) > 0 else 0.0
 
-    # ── 月度收益矩阵（用于热力图）────────────────────────────
     monthly_pct = monthly_ret * 100
     monthly_df  = pd.DataFrame({
         "year":  monthly_pct.index.year,
@@ -456,21 +441,17 @@ def _compute_metrics(df: pd.DataFrame, trades: list,
         "ret":   monthly_pct.values,
     })
 
-    # ── SPY Alpha ────────────────────────────────────────────
     try:
-        spy_df  = fetch_data("SPY")
-        spy_bh  = (spy_df["Close"].iloc[-1] / spy_df["Close"].iloc[0] - 1) * 100
+        spy_df    = fetch_data("SPY")
+        spy_bh    = (spy_df["Close"].iloc[-1] / spy_df["Close"].iloc[0] - 1) * 100
         spy_alpha = total_ret - spy_bh
     except Exception:
         spy_bh    = None
         spy_alpha = None
 
-    # ── 盈亏比 ───────────────────────────────────────────────
     avg_win  = np.mean([t["pnl"] for t in wins])   if wins   else 0
     avg_loss = np.mean([t["pnl"] for t in losses]) if losses else 0
     rr_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else float("inf")
-
-    # ── 平均仓位 ─────────────────────────────────────────────
     avg_pos_size = np.mean([t["pos_size_pct"] for t in trades]) * 100 if trades else 0
 
     return {
