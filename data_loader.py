@@ -1,40 +1,46 @@
 """
 data_loader.py
 --------------
-通用 OHLCV 数据加载器，支持任意 yfinance ticker。
+OHLCV 数据加载器，使用 Financial Modeling Prep API。
 
-- 股票 / ETF（AAPL 等）：用 1h 间隔，55 天分块拉取（yfinance 限制）
-- 贵金属（GC=F / SI=F）：yfinance 对期货 1h 数据支持差，改用 1d 日线
-  覆盖 730 天，数据量足够训练 HMM。
+- AAPL / GCUSD / SIUSD：全部使用日线，10年历史（2016-01-01 至今）
+- 缓存 1 小时，避免重复请求
 """
 
 import os
 import pickle
-from datetime import datetime, timezone, timedelta
+import requests
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 
 CACHE_DIR       = os.path.dirname(__file__)
 CACHE_TTL_HOURS = 1
-LOOKBACK_DAYS   = 730
-CHUNK_DAYS      = 55        # 1h 模式下每块不超过 60 天
+FMP_API_KEY     = "1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p"
+FMP_START       = "2016-01-01"
+FMP_BASE        = "https://financialmodelingprep.com/stable/historical-price-eod/full"
 
-# 用日线的 ticker（期货符号在 1h 下数据质量差）
-DAILY_TICKERS = {"GC=F", "SI=F"}
+# 所有 ticker 统一日线
+DAILY_TICKERS = {"GC=F", "SI=F", "AAPL"}
 
-# 资产显示名
+# ticker → FMP symbol 映射
+FMP_SYMBOL = {
+    "AAPL": "AAPL",
+    "GC=F": "GCUSD",
+    "SI=F": "SIUSD",
+}
+
 ASSET_LABELS = {
-    "AAPL":  "Apple Inc. (AAPL)",
-    "GC=F":  "Gold Futures (GOLD)",
-    "SI=F":  "Silver Futures (SILVER)",
+    "AAPL": "Apple Inc. (AAPL)",
+    "GC=F": "Gold Futures (GOLD)",
+    "SI=F": "Silver Futures (SILVER)",
 }
 
 
 # ---------------------------------------------------------------------------
-# 内部工具
+# 缓存
 # ---------------------------------------------------------------------------
 
 def _cache_path(ticker: str) -> str:
@@ -60,59 +66,31 @@ def _save_cache(ticker: str, df: pd.DataFrame) -> None:
         pickle.dump(df, f)
 
 
-def _flatten(raw: pd.DataFrame) -> pd.DataFrame:
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-    return raw
-
-
-def _keep_ohlcv(raw: pd.DataFrame) -> pd.DataFrame:
-    cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in raw.columns]
-    return raw[cols].copy()
-
-
 # ---------------------------------------------------------------------------
-# 下载逻辑
+# 下载
 # ---------------------------------------------------------------------------
 
-def _fetch_hourly(ticker: str, start: datetime, end: datetime) -> pd.DataFrame:
-    """分块拉取 1h 数据并拼接。"""
-    chunks = []
-    chunk_start = start
-    while chunk_start < end:
-        chunk_end = min(chunk_start + timedelta(days=CHUNK_DAYS), end)
-        raw = yf.download(
-            ticker,
-            start=chunk_start.strftime("%Y-%m-%d"),
-            end=chunk_end.strftime("%Y-%m-%d"),
-            interval="1h",
-            progress=False,
-            auto_adjust=True,
-        )
-        if not raw.empty:
-            chunks.append(_keep_ohlcv(_flatten(raw)))
-        chunk_start = chunk_end
+def _fetch_fmp(ticker: str) -> pd.DataFrame:
+    symbol  = FMP_SYMBOL.get(ticker, ticker)
+    end_str = datetime.now().strftime("%Y-%m-%d")
+    url = (f"{FMP_BASE}?symbol={symbol}"
+           f"&from={FMP_START}&to={end_str}&apikey={FMP_API_KEY}")
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    if not data:
+        raise RuntimeError(f"FMP 未返回 {symbol} 数据，请检查 API key 或 symbol。")
 
-    if not chunks:
-        return pd.DataFrame()
-    df = pd.concat(chunks)
-    df = df[~df.index.duplicated(keep="last")]
-    return df.sort_index()
-
-
-def _fetch_daily(ticker: str, start: datetime, end: datetime) -> pd.DataFrame:
-    """拉取日线数据（贵金属期货用）。"""
-    raw = yf.download(
-        ticker,
-        start=start.strftime("%Y-%m-%d"),
-        end=end.strftime("%Y-%m-%d"),
-        interval="1d",
-        progress=False,
-        auto_adjust=True,
-    )
-    if raw.empty:
-        return pd.DataFrame()
-    return _keep_ohlcv(_flatten(raw))
+    df = pd.DataFrame(data)
+    df = df.rename(columns={
+        "date": "Date", "open": "Open", "high": "High",
+        "low": "Low", "close": "Close", "volume": "Volume",
+    })
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.set_index("Date").sort_index()
+    df = df[["Open", "High", "Low", "Close", "Volume"]]
+    df = df.dropna()
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -128,25 +106,7 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
     if not force_refresh and _cache_is_fresh(ticker):
         return _load_cache(ticker)
 
-    end_dt   = datetime.now(timezone.utc)
-    start_dt = end_dt - timedelta(days=LOOKBACK_DAYS)
-
-    if ticker in DAILY_TICKERS:
-        # 日线模式：volume 对期货意义不大但保留结构一致性
-        raw = _fetch_daily(ticker, start_dt, end_dt)
-        # 日线没有盘中成交量波动特征，用价格波动率替代 vol_volatility
-        vol_window = 5   # 5 日滚动
-    else:
-        raw = _fetch_hourly(ticker, start_dt, end_dt)
-        vol_window = 24  # 24 小时滚动
-
-    if raw.empty:
-        raise RuntimeError(
-            f"yfinance 未返回 {ticker} 的任何数据，请检查网络或 ticker 符号。"
-        )
-
-    df = raw.copy()
-    df.dropna(inplace=True)
+    df = _fetch_fmp(ticker)
 
     # 特征 1：对数收益率 (%)
     df["returns"] = np.log(df["Close"] / df["Close"].shift(1)) * 100
@@ -154,12 +114,8 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
     # 特征 2：价格区间占收盘价比例
     df["range_pct"] = (df["High"] - df["Low"]) / df["Close"] * 100
 
-    # 特征 3：成交量对数的滚动标准差（期货日线时用价格收益率 std 替代）
-    if ticker in DAILY_TICKERS:
-        df["vol_volatility"] = df["returns"].rolling(vol_window, min_periods=3).std()
-    else:
-        log_vol = np.log(df["Volume"].replace(0, np.nan))
-        df["vol_volatility"] = log_vol.rolling(vol_window, min_periods=6).std()
+    # 特征 3：5日滚动收益率标准差
+    df["vol_volatility"] = df["returns"].rolling(5, min_periods=3).std()
 
     df.dropna(inplace=True)
     _save_cache(ticker, df)
