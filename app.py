@@ -416,8 +416,11 @@ def equity_chart(df: pd.DataFrame, spy_data: pd.DataFrame | None = None) -> go.F
         line=dict(color="#60a5fa", width=1.5, dash="dash"),
         name="买入持有"), row=1, col=1)
     if spy_data is not None and len(spy_data):
-        # align SPY to same date range
-        spy_aligned = spy_data["Close"].reindex(df.index, method="ffill").dropna()
+        spy_close = spy_data["Close"]
+        if hasattr(spy_close.index, "tz") and spy_close.index.tz is not None:
+            spy_close = spy_close.tz_localize(None)
+        target_idx = df.index.tz_localize(None) if (hasattr(df.index, "tz") and df.index.tz is not None) else df.index
+        spy_aligned = spy_close.reindex(target_idx, method="ffill").dropna()
         if len(spy_aligned):
             spy_eq = STARTING_CAP * spy_aligned / spy_aligned.iloc[0]
             fig.add_trace(go.Scatter(x=spy_eq.index, y=spy_eq, mode="lines",
