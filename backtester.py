@@ -39,6 +39,10 @@ COOLDOWN_DAILY  = 2
 MAX_HOLD_HOURLY = 24 * 30
 MAX_HOLD_DAILY  = 60
 
+# 摩擦成本（统一百分比模型）
+# slippage=0.05% per side + commission=0.05% per side = 0.10% per side, 0.20% round trip
+FRICTION_PCT    = 0.001   # 0.10% per side; set to 0.0 to disable
+
 WF_TRAIN_RATIO  = 0.6
 WF_STEP_RATIO   = 0.1
 
@@ -304,6 +308,7 @@ def _simulate(df: pd.DataFrame,
     max_hold          = int((MAX_HOLD_DAILY if is_daily else MAX_HOLD_HOURLY) * hold_mult)
     bear_confirm      = BEAR_CONFIRM.get(ticker, 1)
     tp                = TICKER_PARAMS.get(ticker, {})
+    friction_pct      = FRICTION_PCT
     use_regime_reduce = tp.get("regime_reduce", False)   # Gold + Silver: reduce path
     adx_entry         = tp.get("adx_entry", 25)
     use_vol_target    = tp.get("vol_target", False)       # Silver: rvol-based position scaling
@@ -364,11 +369,12 @@ def _simulate(df: pd.DataFrame,
                 # Gold_regime_reduce50_final / Silver_S-R1_provisional:
                 # Regime → reduce to 50% once (Lock A); full exit only by price-type Stop/MaxHold
                 if bear_consec >= bear_confirm and not regime_reduce_triggered:
-                    old_pos      = position
-                    new_pos      = position * 0.50
-                    released     = (old_pos - new_pos) * price
-                    realised     = (price - entry_price) * (old_pos - new_pos) * LEVERAGE
-                    capital     += released + realised
+                    old_pos          = position
+                    new_pos          = position * 0.50
+                    reduce_price_net = price * (1 - friction_pct)
+                    released         = (old_pos - new_pos) * reduce_price_net
+                    realised         = (reduce_price_net - entry_price) * (old_pos - new_pos) * LEVERAGE
+                    capital         += released + realised
                     position     = new_pos
                     realised_from_reduce    += realised
                     regime_reduce_triggered  = True
@@ -390,7 +396,8 @@ def _simulate(df: pd.DataFrame,
                     exit_reason = f"MaxHold ({max_hold} bars)"
 
             if exit_reason:
-                pnl_remaining = (price - entry_price) * position * LEVERAGE
+                exit_price_net = price * (1 - friction_pct)    # pay slippage+commission on exit
+                pnl_remaining = (exit_price_net - entry_price) * position * LEVERAGE
                 capital      += pnl_remaining
                 total_pnl     = realised_from_reduce + pnl_remaining
                 is_stop       = "StopLoss" in exit_reason
@@ -406,7 +413,7 @@ def _simulate(df: pd.DataFrame,
                     "reduce_time":             reduce_time,
                     "reduce_price":            reduce_price,
                     "hold_bars":               hold_bars,
-                    "return_pct":              current_ret * 100 * LEVERAGE,
+                    "return_pct":              (exit_price_net / entry_price - 1) * 100 * LEVERAGE,
                     "sideways_score":          sw_score,
                     "regime_reduce_triggered": regime_reduce_triggered,
                     "vt_scale":                vt_scale,
@@ -441,7 +448,7 @@ def _simulate(df: pd.DataFrame,
                 vt_scale     = 1.0
             pos_size_pct = base_pct * vt_scale
             position     = capital * pos_size_pct / price
-            entry_price  = price
+            entry_price  = price * (1 + friction_pct)          # pay slippage+commission on entry
             stop_price   = entry_price * (1 + stop_loss_pct)   # price-type stop, fixed
             entry_time   = ts
             in_trade     = True
@@ -457,9 +464,10 @@ def _simulate(df: pd.DataFrame,
         equity_curve.append(mtm)
 
     if in_trade:
-        last_price    = float(df["Close"].iloc[-1])
-        pnl_remaining = (last_price - entry_price) * position * LEVERAGE
-        capital      += pnl_remaining
+        last_price         = float(df["Close"].iloc[-1])
+        last_price_net     = last_price * (1 - friction_pct)
+        pnl_remaining      = (last_price_net - entry_price) * position * LEVERAGE
+        capital           += pnl_remaining
         trades.append({
             "entry_time":              entry_time,
             "exit_time":               df.index[-1],
