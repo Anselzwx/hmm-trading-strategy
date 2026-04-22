@@ -43,6 +43,15 @@ MAX_HOLD_DAILY  = 60
 # slippage=0.05% per side + commission=0.05% per side = 0.10% per side, 0.20% round trip
 FRICTION_PCT    = 0.001   # 0.10% per side; set to 0.0 to disable
 
+# 保证金参数（分资产）
+# initial_margin: 开仓所需保证金率（相对 notional）
+# maintenance_margin: 维持保证金率，低于此触发强平
+MARGIN_PARAMS: Dict[str, Dict] = {
+    "AAPL": {"initial_margin": 0.40, "maintenance_margin": 0.25},
+    "GC=F": {"initial_margin": 0.15, "maintenance_margin": 0.10},
+    "SI=F": {"initial_margin": 0.15, "maintenance_margin": 0.10},
+}
+
 WF_TRAIN_RATIO  = 0.6
 WF_STEP_RATIO   = 0.1
 
@@ -309,6 +318,9 @@ def _simulate(df: pd.DataFrame,
     bear_confirm      = BEAR_CONFIRM.get(ticker, 1)
     tp                = TICKER_PARAMS.get(ticker, {})
     friction_pct      = FRICTION_PCT
+    mp                = MARGIN_PARAMS.get(ticker, {"initial_margin": 0.40, "maintenance_margin": 0.25})
+    initial_margin    = mp["initial_margin"]
+    maint_margin      = mp["maintenance_margin"]
     use_regime_reduce = tp.get("regime_reduce", False)   # Gold + Silver: reduce path
     adx_entry         = tp.get("adx_entry", 25)
     use_vol_target    = tp.get("vol_target", False)       # Silver: rvol-based position scaling
@@ -365,6 +377,15 @@ def _simulate(df: pd.DataFrame,
             reduce_reason = None
             exit_reason   = None
 
+            # 层次 2：Maintenance Margin 检查（优先级最高，强平）
+            # account equity = capital + unrealised_pnl
+            # notional exposure = position × price × LEVERAGE
+            notional        = position * price * LEVERAGE
+            unrealised_pnl  = (price - entry_price) * position * LEVERAGE
+            account_equity  = capital + unrealised_pnl
+            if notional > 0 and account_equity < maint_margin * notional:
+                exit_reason = "MarginCall"
+
             if use_regime_reduce:
                 # Gold_regime_reduce50_final / Silver_S-R1_provisional:
                 # Regime → reduce to 50% once (Lock A); full exit only by price-type Stop/MaxHold
@@ -400,7 +421,7 @@ def _simulate(df: pd.DataFrame,
                 pnl_remaining = (exit_price_net - entry_price) * position * LEVERAGE
                 capital      += pnl_remaining
                 total_pnl     = realised_from_reduce + pnl_remaining
-                is_stop       = "StopLoss" in exit_reason
+                is_stop       = ("StopLoss" in exit_reason) or (exit_reason == "MarginCall")
                 trades.append({
                     "entry_time":              entry_time,
                     "exit_time":               ts,
@@ -447,6 +468,14 @@ def _simulate(df: pd.DataFrame,
             else:
                 vt_scale     = 1.0
             pos_size_pct = base_pct * vt_scale
+
+            # 层次 1：Initial Margin 约束
+            # notional = capital × pos_size_pct × LEVERAGE
+            # 所需保证金 = notional × initial_margin ≤ capital（可用资金）
+            # 若超出，缩减 pos_size_pct 使保证金恰好等于 capital
+            max_pos_by_margin = 1.0 / (LEVERAGE * initial_margin)  # pos_size_pct 上限
+            pos_size_pct      = min(pos_size_pct, max_pos_by_margin)
+
             position     = capital * pos_size_pct / price
             entry_price  = price * (1 + friction_pct)          # pay slippage+commission on entry
             stop_price   = entry_price * (1 + stop_loss_pct)   # price-type stop, fixed
