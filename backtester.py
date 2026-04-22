@@ -324,6 +324,8 @@ def _simulate(df: pd.DataFrame,
     bear_consec             = 0
     regime_reduce_triggered = False   # Lock A: one Regime Reduce per holding cycle
     realised_from_reduce    = 0.0    # PnL already booked from partial reduces
+    reduce_time             = None   # bar when reduce was triggered
+    reduce_price            = None   # price at reduce trigger
 
     for ts, row in df.iterrows():
         price    = float(row["Close"])
@@ -356,15 +358,16 @@ def _simulate(df: pd.DataFrame,
                 # Gold_regime_reduce50_final / Silver_S-R1_provisional:
                 # Regime → reduce to 50% once (Lock A); full exit only by price-type Stop/MaxHold
                 if bear_consec >= bear_confirm and not regime_reduce_triggered:
-                    old_pos   = position
-                    new_pos   = position * 0.50
-                    released  = (old_pos - new_pos) * price
-                    realised  = (price - entry_price) * (old_pos - new_pos) * LEVERAGE
-                    capital  += released + realised
-                    position  = new_pos
-                    realised_from_reduce += realised
-                    regime_reduce_triggered = True
-                    reduce_reason = "RegimeReduce50"
+                    old_pos      = position
+                    new_pos      = position * 0.50
+                    released     = (old_pos - new_pos) * price
+                    realised     = (price - entry_price) * (old_pos - new_pos) * LEVERAGE
+                    capital     += released + realised
+                    position     = new_pos
+                    realised_from_reduce    += realised
+                    regime_reduce_triggered  = True
+                    reduce_time              = ts
+                    reduce_price             = price
 
                 # price-type stop: compare current price to fixed stop_price
                 if price <= stop_price:
@@ -393,7 +396,9 @@ def _simulate(df: pd.DataFrame,
                     "pnl":                     total_pnl,
                     "pos_size_pct":            pos_size_pct,
                     "exit_reason":             exit_reason,
-                    "reduce_reason":           reduce_reason or "N/A",
+                    "reduce_reason":           "RegimeReduce50" if regime_reduce_triggered else "N/A",
+                    "reduce_time":             reduce_time,
+                    "reduce_price":            reduce_price,
                     "hold_bars":               hold_bars,
                     "return_pct":              current_ret * 100 * LEVERAGE,
                     "sideways_score":          sw_score,
@@ -403,6 +408,8 @@ def _simulate(df: pd.DataFrame,
                 bear_consec                    = 0
                 regime_reduce_triggered        = False
                 realised_from_reduce           = 0.0
+                reduce_time                    = None
+                reduce_price                   = None
                 if is_stop:
                     consec_stops += 1; after_stopout = True
                     cooldown_left = _sideways_cooldown(base_cd, sw_score, consec_stops)
@@ -430,6 +437,8 @@ def _simulate(df: pd.DataFrame,
             bear_consec             = 0
             regime_reduce_triggered = False
             realised_from_reduce    = 0.0
+            reduce_time             = None
+            reduce_price            = None
 
         mtm = capital + (price - entry_price) * position * LEVERAGE if in_trade else capital
         equity_curve.append(mtm)
@@ -447,6 +456,8 @@ def _simulate(df: pd.DataFrame,
             "pos_size_pct":            pos_size_pct,
             "exit_reason":             "End of data",
             "reduce_reason":           "RegimeReduce50" if regime_reduce_triggered else "N/A",
+            "reduce_time":             reduce_time,
+            "reduce_price":            reduce_price,
             "hold_bars":               hold_bars,
             "return_pct":              (last_price - entry_price) / entry_price * 100 * LEVERAGE,
             "sideways_score":          int(df["sideways_score"].iloc[-1]),
