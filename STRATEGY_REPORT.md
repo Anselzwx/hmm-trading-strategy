@@ -1,6 +1,6 @@
 # HMM Multi-Asset Trading Strategy — OOS Robustness Report
 
-**Version:** Milestone v2  
+**Version:** Milestone v3  
 **Date:** 2026-04-22  
 **Assets:** GC=F (Gold), SI=F (Silver), AAPL  
 **Period:** 2016-01-07 → 2026-04-21 (≈10 years, daily bars)
@@ -17,6 +17,7 @@
 | v1 AAPL A2 | hold_mult raised 0.75 → 1.25 (max_hold 45→75 bars) | 77% of MaxHold exits continued rising +20 bars |
 | v1 Final | price-type stop throughout; reduce_time/reduce_price logging | Accounting correctness and auditability |
 | **v2 Silver VT1** | **SI=F position scaled by rvol vol-targeting** | **Vol–PnL audit: rvol→stop_rate corr=0.528; high-vol entries systematically over-sized** |
+| **v3 AAPL OOS audit** | **No change to AAPL parameters** | **Expanding-window OOS confirmed AAPL IS advantage is structural (2016-2022 bull market); Regime Reduce tested (A-R1/A-R2) and rejected** |
 
 ---
 
@@ -140,6 +141,8 @@ All three segments: positive return, Sharpe > 1.3. Most consistent asset in the 
 
 6. **AAPL State-2 trades (17/35) carry slightly higher stop rate (29% vs 22%)** — acknowledged but not addressed; State-2 avg_ret is equal to State-3/4 after hold_mult fix.
 
+7. **AAPL OOS Sharpe degrades significantly (1.00 full-sample → 0.31 OOS).** Expanding-window OOS test (init=60%, step=10%) shows: OOS avg_hold=12.8 bars vs IS ~56 bars; 76% of OOS exits are Regime → Bear/Crash (HMM state drift); HMM bull-bar frequency collapses in OOS2 (19% vs ~48% in other windows). Root cause: AAPL 2022+ market structure change causes HMM state distribution to drift from IS training. Regime Reduce (A-R1 bear_confirm=1, A-R2 bear_confirm=2) was tested — both showed 2021-2023 ret=-0.7%, StopLoss rising from 9→16, MaxDD deepening to -42.6%. Regime Reduce rejected. AAPL maintains regime_reduce=False. Full-sample performance relies heavily on 2016-2022 bull market structural tailwind.
+
 ---
 
 ## 8. Research Log — Closed Directions
@@ -147,6 +150,7 @@ All three segments: positive return, Sharpe > 1.3. Most consistent asset in the 
 | Direction | Outcome |
 |-----------|---------|
 | Silver break-even stop (trigger=+3%) | Rejected — rescued 3/3 swept trades but -565% Return from winner truncation |
+| AAPL Regime Reduce (A-R1 bc=1, A-R2 bc=2) | Rejected — 2021-2023 ret unchanged at -0.7%, StopLoss 9→16, MaxDD -35.9%→-42.6%; root cause is HMM state drift + entry quality in 2022+ bear market, not Regime trigger timing |
 | Silver fixed stop width (-7%/-8%) | Not tested — audit showed 5/9 stops are genuine entry failures; wider stop would increase loss |
 | AAPL State-2 entry filter | Closed — no issue after hold_mult fix; State-2 performs equal to State-3/4 |
 | Gold/AAPL vol-targeting | Not applied — Vol–PnL audit showed no systematic overweight pattern |
