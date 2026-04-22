@@ -49,9 +49,19 @@ WF_STEP_RATIO   = 0.1
 # stop:     止损比例
 # hold_mult: 最大持仓倍数（相对全局MAX_HOLD）
 TICKER_PARAMS: Dict[str, Dict] = {
-    "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.06, "hold_mult": 0.75},
-    "GC=F": {"n_states": 7, "bull_top": 2, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.0},
-    "SI=F": {"n_states": 7, "bull_top": 1, "min_conf": 7,  "stop": -0.06, "hold_mult": 1.0},
+    # AAPL_A2_final: hold_mult=1.25 (75bars), subsample validated 2026-04-21
+    "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.25, "adx_entry": 25, "regime_reduce": False},
+    # Gold_regime_reduce50_final: Regime→reduce50%, price-type stop, validated 2026-04-21
+    "GC=F": {"n_states": 7, "bull_top": 2, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 25, "regime_reduce": True},
+    # Silver_S-R1_provisional: ADX>30, Regime→reduce50%, price-type stop, validated 2026-04-22
+    "SI=F": {"n_states": 7, "bull_top": 1, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 30, "regime_reduce": True},
+}
+
+# Regime exit 连续确认 bars（1=原版，2=Gold 定案）
+BEAR_CONFIRM: Dict[str, int] = {
+    "AAPL": 1,
+    "GC=F": 2,
+    "SI=F": 1,
 }
 
 
@@ -183,6 +193,26 @@ def compute_indicators(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     ema50 = out["ema50"]
     out["ema50_slope"] = (ema50 - ema50.shift(5)) / ema50.shift(5) * 100
 
+    # ── Sideways Score（0-4，越高越横盘）──────────────────────
+    # 1. ADX < 18
+    sw1 = (out["adx"] < 18).astype(int)
+
+    # 2. |EMA50 slope| < 0.1%
+    sw2 = (out["ema50_slope"].abs() < 0.1).astype(int)
+
+    # 3. BB width 在过去 120 bars 的低 30% 分位
+    bb_width = (out["bb_upper"] - out["bb_lower"]) / out["bb_mid"]
+    bb_low   = bb_width.rolling(120, min_periods=30).quantile(0.30)
+    sw3 = (bb_width <= bb_low).astype(int)
+
+    # 4. Breakout failure：突破20日高点后5bars内收益 <= 0
+    roll_high_20 = c.rolling(20).max().shift(1)
+    breakout     = (c > roll_high_20)
+    fwd_ret_5    = c.shift(-5) / c - 1
+    sw4 = (breakout & (fwd_ret_5 <= 0)).astype(int).rolling(10, min_periods=1).max()
+
+    out["sideways_score"] = (sw1 + sw2 + sw3 + sw4).clip(0, 4)
+
     return out
 
 
@@ -254,18 +284,34 @@ def _walk_forward_states(features: np.ndarray,
 # 5. 回测核心
 # ============================================================
 
+def _sideways_cooldown(base_cd: int, sw_score: int, consec_stops: int) -> int:
+    """计算止损后 cooldown 长度，综合横盘程度和连续止损次数。"""
+    cd = base_cd
+    if consec_stops >= 2:
+        cd = base_cd * 2          # 连续止损 → 双倍 cooldown
+    if sw_score >= 2:
+        cd += 3                   # 横盘环境额外 +3 bars
+    return cd
+
+
 def _simulate(df: pd.DataFrame,
               is_daily: bool,
               stop_loss_pct: float = STOP_LOSS_PCT,
               hold_mult: float = 1.0,
-              min_conf: int = MIN_CONFIRMATIONS) -> Tuple[list, list]:
-    cooldown_max = COOLDOWN_DAILY  if is_daily else COOLDOWN_HOURLY
-    max_hold     = int((MAX_HOLD_DAILY if is_daily else MAX_HOLD_HOURLY) * hold_mult)
+              min_conf: int = MIN_CONFIRMATIONS,
+              ticker: str = "") -> Tuple[list, list]:
+    base_cd           = COOLDOWN_DAILY if is_daily else COOLDOWN_HOURLY
+    max_hold          = int((MAX_HOLD_DAILY if is_daily else MAX_HOLD_HOURLY) * hold_mult)
+    bear_confirm      = BEAR_CONFIRM.get(ticker, 1)
+    tp                = TICKER_PARAMS.get(ticker, {})
+    use_regime_reduce = tp.get("regime_reduce", False)   # Gold + Silver: reduce path
+    adx_entry         = tp.get("adx_entry", 25)
 
     capital       = STARTING_CAP
     position      = 0.0
     pos_size_pct  = 0.0
     entry_price   = 0.0
+    stop_price    = 0.0   # price-type stop: fixed at entry, unaffected by partial reduces
     entry_time    = None
     cooldown_left = 0
     hold_bars     = 0
@@ -273,68 +319,138 @@ def _simulate(df: pd.DataFrame,
     equity_curve  = []
     trades        = []
 
+    consec_stops            = 0
+    after_stopout           = False
+    bear_consec             = 0
+    regime_reduce_triggered = False   # Lock A: one Regime Reduce per holding cycle
+    realised_from_reduce    = 0.0    # PnL already booked from partial reduces
+
     for ts, row in df.iterrows():
-        price = float(row["Close"])
+        price    = float(row["Close"])
+        sw_score = int(row.get("sideways_score", 0))
 
+        # ── 横盘动态参数 ──────────────────────────────────────
+        if sw_score <= 1:
+            eff_min_conf = min_conf;     pos_scale = 1.0
+        elif sw_score == 2:
+            eff_min_conf = min_conf + 1; pos_scale = 0.75
+        else:
+            eff_min_conf = min_conf + 2; pos_scale = 0.50
+
+        entry_min_conf = eff_min_conf + (2 if after_stopout else 0)
+
+        # ── 持仓管理 ─────────────────────────────────────────
         if in_trade:
-            hold_bars += 1
-            current_ret = (price - entry_price) / entry_price
+            hold_bars   += 1
+            current_ret  = (price - entry_price) / entry_price
 
-            exit_reason = None
             if row["is_bear"]:
-                exit_reason = "Regime → Bear/Crash"
-            elif current_ret <= stop_loss_pct:
-                exit_reason = f"Stop Loss ({stop_loss_pct*100:.0f}%)"
-            elif hold_bars >= max_hold:
-                exit_reason = f"Max Hold ({max_hold} bars)"
+                bear_consec += 1
+            else:
+                bear_consec = 0
+
+            reduce_reason = None
+            exit_reason   = None
+
+            if use_regime_reduce:
+                # Gold_regime_reduce50_final / Silver_S-R1_provisional:
+                # Regime → reduce to 50% once (Lock A); full exit only by price-type Stop/MaxHold
+                if bear_consec >= bear_confirm and not regime_reduce_triggered:
+                    old_pos   = position
+                    new_pos   = position * 0.50
+                    released  = (old_pos - new_pos) * price
+                    realised  = (price - entry_price) * (old_pos - new_pos) * LEVERAGE
+                    capital  += released + realised
+                    position  = new_pos
+                    realised_from_reduce += realised
+                    regime_reduce_triggered = True
+                    reduce_reason = "RegimeReduce50"
+
+                # price-type stop: compare current price to fixed stop_price
+                if price <= stop_price:
+                    exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
+                elif hold_bars >= max_hold:
+                    exit_reason = f"MaxHold ({max_hold} bars)"
+            else:
+                # AAPL and others: original Regime full exit + return-type stop
+                if bear_consec >= bear_confirm:
+                    exit_reason = "Regime → Bear/Crash"
+                elif current_ret <= stop_loss_pct:
+                    exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
+                elif hold_bars >= max_hold:
+                    exit_reason = f"MaxHold ({max_hold} bars)"
 
             if exit_reason:
-                pnl_lev  = (price - entry_price) * position * LEVERAGE
-                capital += pnl_lev
+                pnl_remaining = (price - entry_price) * position * LEVERAGE
+                capital      += pnl_remaining
+                total_pnl     = realised_from_reduce + pnl_remaining
+                is_stop       = "StopLoss" in exit_reason
                 trades.append({
-                    "entry_time":   entry_time,
-                    "exit_time":    ts,
-                    "entry_price":  entry_price,
-                    "exit_price":   price,
-                    "pnl":          pnl_lev,
-                    "pos_size_pct": pos_size_pct,
-                    "exit_reason":  exit_reason,
-                    "hold_bars":    hold_bars,
-                    "return_pct":   current_ret * 100 * LEVERAGE,
+                    "entry_time":              entry_time,
+                    "exit_time":               ts,
+                    "entry_price":             entry_price,
+                    "exit_price":              price,
+                    "pnl":                     total_pnl,
+                    "pos_size_pct":            pos_size_pct,
+                    "exit_reason":             exit_reason,
+                    "reduce_reason":           reduce_reason or "N/A",
+                    "hold_bars":               hold_bars,
+                    "return_pct":              current_ret * 100 * LEVERAGE,
+                    "sideways_score":          sw_score,
+                    "regime_reduce_triggered": regime_reduce_triggered,
                 })
-                position, in_trade, hold_bars = 0.0, False, 0
-                cooldown_left = cooldown_max
+                position, in_trade, hold_bars  = 0.0, False, 0
+                bear_consec                    = 0
+                regime_reduce_triggered        = False
+                realised_from_reduce           = 0.0
+                if is_stop:
+                    consec_stops += 1; after_stopout = True
+                    cooldown_left = _sideways_cooldown(base_cd, sw_score, consec_stops)
+                else:
+                    consec_stops = 0; after_stopout = False
+                    cooldown_left = base_cd
 
         if cooldown_left > 0:
             cooldown_left -= 1
 
-        if not in_trade and cooldown_left == 0 and row["is_bull"] and row["signal_score"] >= min_conf:
+        # ── 开仓判断 ─────────────────────────────────────────
+        if (not in_trade and cooldown_left == 0
+                and row["is_bull"]
+                and row["signal_score"] >= entry_min_conf
+                and float(row["adx"]) > adx_entry):
             score        = float(row["signal_score"])
-            pos_size_pct = _position_size(score, min_conf)
-            capital_used = capital * pos_size_pct
-            position     = capital_used / price
+            pos_size_pct = _position_size(score, eff_min_conf) * pos_scale
+            position     = capital * pos_size_pct / price
             entry_price  = price
+            stop_price   = entry_price * (1 + stop_loss_pct)   # price-type stop, fixed
             entry_time   = ts
             in_trade     = True
             hold_bars    = 0
+            after_stopout           = False
+            bear_consec             = 0
+            regime_reduce_triggered = False
+            realised_from_reduce    = 0.0
 
         mtm = capital + (price - entry_price) * position * LEVERAGE if in_trade else capital
         equity_curve.append(mtm)
 
     if in_trade:
-        last_price = float(df["Close"].iloc[-1])
-        pnl_lev    = (last_price - entry_price) * position * LEVERAGE
-        capital   += pnl_lev
+        last_price    = float(df["Close"].iloc[-1])
+        pnl_remaining = (last_price - entry_price) * position * LEVERAGE
+        capital      += pnl_remaining
         trades.append({
-            "entry_time":   entry_time,
-            "exit_time":    df.index[-1],
-            "entry_price":  entry_price,
-            "exit_price":   last_price,
-            "pnl":          pnl_lev,
-            "pos_size_pct": pos_size_pct,
-            "exit_reason":  "End of data",
-            "hold_bars":    hold_bars,
-            "return_pct":   (last_price-entry_price)/entry_price*100*LEVERAGE,
+            "entry_time":              entry_time,
+            "exit_time":               df.index[-1],
+            "entry_price":             entry_price,
+            "exit_price":              last_price,
+            "pnl":                     realised_from_reduce + pnl_remaining,
+            "pos_size_pct":            pos_size_pct,
+            "exit_reason":             "End of data",
+            "reduce_reason":           "RegimeReduce50" if regime_reduce_triggered else "N/A",
+            "hold_bars":               hold_bars,
+            "return_pct":              (last_price - entry_price) / entry_price * 100 * LEVERAGE,
+            "sideways_score":          int(df["sideways_score"].iloc[-1]),
+            "regime_reduce_triggered": regime_reduce_triggered,
         })
 
     return equity_curve, trades
@@ -385,7 +501,7 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     adx_ok = df["adx"] > 20
     df["regime_filter"] = (ma_ok & adx_ok).fillna(False)
 
-    equity_curve, trades = _simulate(df, is_daily, stop, hold_mult, min_conf)
+    equity_curve, trades = _simulate(df, is_daily, stop, hold_mult, min_conf, ticker)
     df["equity"] = equity_curve
 
     metrics = _compute_metrics(df, trades, ticker, is_daily)
