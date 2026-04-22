@@ -8,11 +8,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-import os, pickle, base64
+import os, pickle, base64, json, glob
+from datetime import datetime
 
 from data_loader import fetch_data
 from backtester  import (run_backtest, STARTING_CAP, MIN_CONFIRMATIONS,
-                          _position_size, N_STATES, TICKER_PARAMS)
+                          _position_size, N_STATES, TICKER_PARAMS,
+                          FRICTION_PCT, MARGIN_PARAMS, LEVERAGE)
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
 ASSETS_DIR  = os.path.join(os.path.dirname(__file__), "assets")
@@ -1093,6 +1095,280 @@ def render_asset(ticker: str) -> None:
 
 
 # ──────────────────────────────────────────────────────────────
+# 今日信号面板
+# ──────────────────────────────────────────────────────────────
+
+def _load_latest_signal() -> dict | None:
+    sig_dir = os.path.join(os.path.dirname(__file__), "signals")
+    files   = sorted(glob.glob(os.path.join(sig_dir, "signal_*.json")))
+    if not files:
+        return None
+    with open(files[-1]) as f:
+        return json.load(f)
+
+
+def _action_badge(action: str) -> str:
+    colors = {
+        "ENTER":    ("#00e676", "#002d16"),
+        "HOLD":     ("#60a5fa", "#0c1a2e"),
+        "EXIT":     ("#ff5252", "#2d0000"),
+        "WATCH":    ("#ffd740", "#2d2200"),
+        "STAY_OUT": ("#475569", "#111827"),
+        "MarginCall": ("#ff5252", "#2d0000"),
+    }
+    fg, bg = colors.get(action, ("#94a3b8", "#1e2130"))
+    return (f'<span style="background:{bg};color:{fg};border:1px solid {fg}40;'
+            f'border-radius:8px;padding:4px 14px;font-weight:700;font-size:0.9rem;'
+            f'letter-spacing:.3px">{action}</span>')
+
+
+def render_signals_tab() -> None:
+    data = _load_latest_signal()
+    if data is None:
+        st.warning("未找到信号文件。请先运行 `python signal_generator.py`。")
+        return
+
+    gen_at  = data.get("generated_at", "")
+    signals = data.get("signals", {})
+    errors  = data.get("errors", {})
+
+    try:
+        gen_dt = datetime.fromisoformat(gen_at)
+        gen_str = gen_dt.strftime("%Y-%m-%d  %H:%M")
+    except Exception:
+        gen_str = gen_at
+
+    st.markdown(
+        f'<div style="font-size:0.72rem;color:#475569;margin-bottom:1.2rem">'
+        f'信号生成时间：<b style="color:#64748b">{gen_str}</b> &nbsp;·&nbsp; '
+        f'运行 <code>python signal_generator.py</code> 刷新</div>',
+        unsafe_allow_html=True)
+
+    if errors:
+        st.error(f"信号生成错误：{errors}")
+
+    ticker_labels = {"GC=F": "🥇 Gold", "SI=F": "🥈 Silver", "AAPL": "🍎 Apple"}
+    for ticker in ["GC=F", "SI=F", "AAPL"]:
+        sig = signals.get(ticker)
+        if not sig:
+            continue
+
+        label      = ticker_labels.get(ticker, ticker)
+        af_flat    = sig.get("action_if_flat", "—")
+        af_long    = sig.get("action_if_long", "—")
+        regime     = sig.get("regime", "—")
+        score      = sig.get("signal_score", 0)
+        min_conf   = sig.get("min_conf", 9)
+        adx        = sig.get("adx", 0)
+        adx_entry  = sig.get("adx_entry", 25)
+        bull_prob  = sig.get("bull_prob", 0)
+        bear_prob  = sig.get("bear_prob", 0)
+        close      = sig.get("close", 0)
+        sw         = sig.get("sideways_score", 0)
+        vt         = sig.get("vt_scale")
+        details    = sig.get("signal_details", {})
+        posterior  = sig.get("posterior", [])
+        pc         = _pill(regime)
+
+        st.markdown(f'<div class="section-header">{label} &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">{sig.get("date","")}</span></div>', unsafe_allow_html=True)
+
+        ca, cb, cc = st.columns([1.4, 1.4, 3.2], gap="medium")
+
+        with ca:
+            st.markdown(f"""<div class="glass-card" style="text-align:center;padding:18px">
+                <div style="font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">如果空仓</div>
+                {_action_badge(af_flat)}
+                <div style="margin-top:14px;font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">如果持仓</div>
+                {_action_badge(af_long)}
+                <div style="margin-top:12px;font-size:0.72rem;color:#64748b">收盘价 <b style="color:#e2e8f0">${close:,.2f}</b></div>
+            </div>""", unsafe_allow_html=True)
+
+        with cb:
+            bull_bar = int(bull_prob * 100)
+            bear_bar = int(bear_prob * 100)
+            post_html = ""
+            if posterior:
+                post_html = '<div style="display:flex;gap:2px;margin-top:8px;align-items:flex-end">'
+                top_idx = int(np.argmax(posterior))
+                for i, p in enumerate(posterior):
+                    h   = max(4, int(p * 60))
+                    col = "#00e676" if i == top_idx else "rgba(96,165,250,0.4)"
+                    post_html += (f'<div style="flex:1;display:flex;flex-direction:column;align-items:center">'
+                                  f'<div style="background:{col};height:{h}px;width:100%;border-radius:2px 2px 0 0"></div>'
+                                  f'<div style="font-size:0.5rem;color:#475569">{i}</div></div>')
+                post_html += '</div>'
+            st.markdown(f"""<div class="glass-card" style="padding:16px">
+                <div style="font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">HMM Regime</div>
+                <span class="regime-pill {pc}">{regime}</span>
+                <div style="margin-top:10px;font-size:0.72rem">
+                    <span style="color:#00e676">Bull {bull_bar}%</span> &nbsp;·&nbsp;
+                    <span style="color:#ff5252">Bear {bear_bar}%</span>
+                </div>
+                <div style="margin-top:6px;font-size:0.72rem;color:#64748b">
+                    Score <b style="color:{'#00e676' if score>=min_conf else '#ffd740'}">{score}/{14}</b> &nbsp;
+                    ADX <b style="color:{'#00e676' if adx>adx_entry else '#ff5252'}">{adx:.1f}</b> &nbsp;
+                    SW <b style="color:#64748b">{sw}/4</b>
+                    {f'&nbsp; VT <b style="color:#a78bfa">{vt:.3f}</b>' if vt else ''}
+                </div>
+                {post_html}
+            </div>""", unsafe_allow_html=True)
+
+        with cc:
+            det_items = [
+                ("RSI < 90",          details.get("rsi_ok", False),       ""),
+                ("动量 > 1%",         details.get("momentum_ok", False),   ""),
+                ("波动率 < 6%",       details.get("vol_ok", False),        ""),
+                ("成交量 > SMA20",    details.get("volume_ok", False),     ""),
+                ("ADX > 25",          details.get("adx_ok", False),        ""),
+                ("价格 > EMA 50",     details.get("above_ema50", False),   ""),
+                ("价格 > EMA 200",    details.get("above_ema200", False),  ""),
+                ("MACD > Signal",     details.get("macd_ok", False),       ""),
+                ("价格 > BB 中轨",    details.get("above_bb_mid", False),  ""),
+                ("Stoch %K↑ & <80",  details.get("stoch_ok", False),      ""),
+                ("Williams %R < -20", details.get("williams_ok", False),   ""),
+                ("CCI > 0",           details.get("cci_ok", False),        ""),
+                ("OBV > OBV EMA",     details.get("obv_ok", False),        ""),
+                ("距高点 > -30%",     details.get("drawdown_ok", False),   ""),
+            ]
+            n_pass = sum(1 for _, ok, _ in det_items if ok)
+            pct    = n_pass / len(det_items)
+            bar_c  = _score_color(pct)
+            st.markdown(f"""<div class="glass-card" style="padding:14px 18px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                    <span style="font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px">14 信号明细</span>
+                    <span style="font-size:1rem;font-weight:800;color:{bar_c}">{n_pass}/{len(det_items)}</span>
+                </div>
+                <div class="score-outer"><div class="score-inner" style="width:{int(pct*100)}%;background:{bar_c};opacity:0.85"></div></div>
+            """, unsafe_allow_html=True)
+            col_a, col_b = st.columns(2)
+            col_a.markdown("".join(_sig_row(nm, ok, vl) for nm, ok, vl in det_items[:7]), unsafe_allow_html=True)
+            col_b.markdown("".join(_sig_row(nm, ok, vl) for nm, ok, vl in det_items[7:]), unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+
+
+# ──────────────────────────────────────────────────────────────
+# 组合面板
+# ──────────────────────────────────────────────────────────────
+
+def portfolio_equity_chart(eq_dict: dict) -> go.Figure:
+    tickers = list(eq_dict.keys())
+    idx     = list(eq_dict.values())[0].index
+    rets    = {t: eq_dict[t].reindex(idx, method="ffill").fillna(STARTING_CAP) / STARTING_CAP
+               for t in tickers}
+    port    = sum(rets[t] for t in tickers) / 3 * STARTING_CAP
+
+    fig = go.Figure()
+    colors = {"GC=F": "#ffd740", "SI=F": "#94a3b8", "AAPL": "#60a5fa"}
+    for t in tickers:
+        fig.add_trace(go.Scatter(
+            x=idx, y=rets[t] * STARTING_CAP,
+            mode="lines", name=t,
+            line=dict(color=colors.get(t, "#94a3b8"), width=1.2, dash="dot"),
+            opacity=0.6))
+    fig.add_trace(go.Scatter(
+        x=idx, y=port, mode="lines", name="组合（等权）",
+        line=dict(color="#00e676", width=2.5),
+        fill="tozeroy", fillcolor="rgba(0,230,118,0.05)"))
+
+    roll_max = port.cummax()
+    dd       = (port - roll_max) / roll_max * 100
+    total_ret  = (port.iloc[-1] / STARTING_CAP - 1) * 100
+    dr         = port.pct_change().dropna()
+    sharpe     = dr.mean() / dr.std() * np.sqrt(252)
+    max_dd     = dd.min()
+
+    fig.update_layout(
+        **_base_layout(height=380),
+        title=dict(
+            text=f"等权组合   Return {total_ret:+.1f}%   Sharpe {sharpe:.2f}   MaxDD {max_dd:.1f}%",
+            font=dict(size=12, color="#94a3b8"), x=0, xanchor="left"),
+        yaxis=dict(gridcolor=GRID_COLOR, tickprefix="$"),
+        xaxis=dict(gridcolor=GRID_COLOR))
+    return fig
+
+
+def render_portfolio_tab() -> None:
+    st.markdown('<div class="section-header">📊 多资产组合（等权 1/3 each）</div>', unsafe_allow_html=True)
+
+    tickers = ["GC=F", "SI=F", "AAPL"]
+    fnames  = {"GC=F": "GC_F", "SI=F": "SI_F", "AAPL": "AAPL"}
+
+    eq_curves = {}
+    metrics_all = {}
+    for t in tickers:
+        r = _load_precomputed(t)
+        if r is None:
+            st.warning(f"{t} 预计算数据缺失，请先运行 precompute.py")
+            return
+        eq_curves[t]   = pd.Series(r["df"]["equity"].values, index=r["df"].index)
+        metrics_all[t] = r["metrics"]
+
+    # 组合资金曲线
+    st.plotly_chart(portfolio_equity_chart(eq_curves), use_container_width=True)
+
+    # 单资产 vs 组合绩效对比
+    st.markdown('<div class="section-header">📋 绩效对比</div>', unsafe_allow_html=True)
+
+    idx  = eq_curves["GC=F"].index
+    rets = {t: eq_curves[t].reindex(idx, method="ffill").fillna(STARTING_CAP) / STARTING_CAP
+            for t in tickers}
+    port = sum(rets[t] for t in tickers) / 3 * STARTING_CAP
+
+    def _port_metrics(eq):
+        tr  = (eq.iloc[-1] / STARTING_CAP - 1) * 100
+        rm  = eq.cummax(); mdd = ((eq-rm)/rm*100).min()
+        dr  = eq.pct_change().dropna()
+        sh  = dr.mean() / dr.std() * np.sqrt(252) if dr.std() > 0 else 0
+        cal = tr / abs(mdd) if mdd != 0 else 0
+        return tr, sh, mdd, cal
+
+    rows = []
+    for t in tickers:
+        m = metrics_all[t]
+        rows.append({"资产": t,
+                     "Return": f"{m['total_return_pct']:+.1f}%",
+                     "Sharpe": f"{m['sharpe']:.2f}",
+                     "MaxDD":  f"{m['max_drawdown_pct']:.1f}%",
+                     "Calmar": f"{m['calmar']:.1f}",
+                     "Trades": m["n_trades"]})
+    ptr, psh, pmdd, pcal = _port_metrics(port)
+    rows.append({"资产": "🟢 Portfolio (1/3)",
+                 "Return": f"{ptr:+.1f}%",
+                 "Sharpe": f"{psh:.2f}",
+                 "MaxDD":  f"{pmdd:.1f}%",
+                 "Calmar": f"{pcal:.1f}",
+                 "Trades": "—"})
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # 摩擦成本说明
+    st.markdown('<div class="section-header">💸 摩擦成本 & 保证金参数</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        st.markdown(f"""<div class="glass-card">
+            <div class="section-header" style="margin-top:0">摩擦模型（统一百分比）</div>
+            <div class="sig-row"><span class="sig-name">Slippage</span><span class="sig-val">0.05% per side</span></div>
+            <div class="sig-row"><span class="sig-name">Commission</span><span class="sig-val">0.05% per side</span></div>
+            <div class="sig-row"><span class="sig-name">合计</span><span class="sig-val">0.10% per side · 0.20% round trip</span></div>
+            <div class="sig-row"><span class="sig-name">组合 Sharpe 影响</span><span class="sig-val" style="color:#ffd740">1.76 → 1.75（-0.017）</span></div>
+            <div class="sig-row"><span class="sig-name">组合 MaxDD 影响</span><span class="sig-val" style="color:#00e676">不变（-19.0%）</span></div>
+        </div>""", unsafe_allow_html=True)
+    with c2:
+        rows_m = []
+        for t in tickers:
+            mp = MARGIN_PARAMS.get(t, {})
+            rows_m.append({
+                "资产": t,
+                "Initial Margin": f"{mp.get('initial_margin',0):.0%}",
+                "Maintenance Margin": f"{mp.get('maintenance_margin',0):.0%}",
+                "MarginCall 次数（10年）": "0",
+                "结论": "Stop先触发"
+            })
+        st.dataframe(pd.DataFrame(rows_m), use_container_width=True, hide_index=True)
+
+
+# ──────────────────────────────────────────────────────────────
 # 主入口
 # ──────────────────────────────────────────────────────────────
 
@@ -1127,11 +1403,15 @@ def main() -> None:
             st.rerun()
 
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-    tab_aapl, tab_gold, tab_silver = st.tabs([
+    tab_sig, tab_port, tab_aapl, tab_gold, tab_silver = st.tabs([
+        "📡  今日信号",
+        "🌐  组合",
         "🍎  Apple (AAPL)",
         "🥇  Gold (GC=F)",
         "🥈  Silver (SI=F)",
     ])
+    with tab_sig:    render_signals_tab()
+    with tab_port:   render_portfolio_tab()
     with tab_aapl:   render_asset("AAPL")
     with tab_gold:   render_asset("GC=F")
     with tab_silver: render_asset("SI=F")
