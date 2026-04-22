@@ -1,6 +1,6 @@
 # HMM Multi-Asset Trading Strategy — OOS Robustness Report
 
-**Version:** Milestone v3  
+**Version:** Milestone v4 (Final)  
 **Date:** 2026-04-22  
 **Assets:** GC=F (Gold), SI=F (Silver), AAPL  
 **Period:** 2016-01-07 → 2026-04-21 (≈10 years, daily bars)
@@ -18,6 +18,7 @@
 | v1 Final | price-type stop throughout; reduce_time/reduce_price logging | Accounting correctness and auditability |
 | **v2 Silver VT1** | **SI=F position scaled by rvol vol-targeting** | **Vol–PnL audit: rvol→stop_rate corr=0.528; high-vol entries systematically over-sized** |
 | **v3 AAPL OOS audit** | **No change to AAPL parameters** | **Expanding-window OOS confirmed AAPL IS advantage is structural (2016-2022 bull market); Regime Reduce tested (A-R1/A-R2) and rejected** |
+| **v4 Portfolio baseline** | **Equal-weight portfolio (1/3 each) established as official baseline** | **Strategy-layer correlation ≈0; Portfolio Sharpe 1.79 > any single asset; MaxDD -18.1%** |
 
 ---
 
@@ -145,7 +146,60 @@ All three segments: positive return, Sharpe > 1.3. Most consistent asset in the 
 
 ---
 
-## 8. Research Log — Closed Directions
+## 8. Multi-asset Portfolio (v4 — Official Baseline)
+
+### Strategy-layer vs Price-layer Correlation
+
+| | GC=F | SI=F | AAPL |
+|--|------|------|------|
+| **Strategy equity returns** | | | |
+| GC=F | 1.000 | 0.020 | -0.002 |
+| SI=F | 0.020 | 1.000 | 0.003 |
+| AAPL | -0.002 | 0.003 | 1.000 |
+| **Underlying price returns (reference)** | | | |
+| GC=F | 1.000 | 0.771 | 0.038 |
+| SI=F | 0.771 | 1.000 | 0.117 |
+
+GC=F and SI=F share 0.771 price-level correlation, yet their strategy equity curves correlate at only 0.020 — the entry/exit timing is effectively independent across all three assets. This near-zero strategy-layer correlation is the foundation of the portfolio's diversification value.
+
+### Equal-weight Portfolio vs Single Assets
+
+| | Return | Sharpe | MaxDD | Calmar |
+|--|--------|--------|-------|--------|
+| GC=F | +9842% | 1.47 | -22.2% | 444 |
+| SI=F | +1727% | 1.08 | -31.1% | 56 |
+| AAPL | +995% | 1.00 | -35.9% | 28 |
+| **Portfolio (1/3 each)** | **+4188%** | **1.79** | **-18.1%** | **231** |
+
+Portfolio Sharpe 1.79 exceeds every individual asset (best single: GC=F at 1.47). MaxDD -18.1% is tighter than every individual asset (best single: GC=F at -22.2%). The improvement is genuine diversification, not averaging — the portfolio's Sharpe is super-additive relative to any single component.
+
+### Portfolio Subsample Results
+
+| Period | Return | Sharpe | MaxDD |
+|--------|--------|--------|-------|
+| 2016–2020 | +435% | 1.92 | -12.0% |
+| 2021–2023 | **+159%** | **1.49** | -12.3% |
+| 2024–2026 | +205% | 2.00 | -18.1% |
+
+All three segments: positive return, Sharpe > 1.4. The 2021–2023 segment — weakest for every individual asset (AAPL +35.5%, SI=F +18.4%) — returns +159% at the portfolio level, as Gold's strong performance in that period offsets the other assets' weakness.
+
+### Portfolio Baseline Conclusion
+
+**Equal-weight portfolio (1/3 each across GC=F, SI=F, AAPL) is accepted as the official portfolio baseline for this research cycle.** On the basis of near-zero strategy-layer correlations, the portfolio delivers:
+- Sharpe improvement: 1.47 → 1.79 (+0.32 above best single asset)
+- MaxDD improvement: -22.2% → -18.1% (tighter than best single asset)
+- Consistent performance across all three time segments including the 2021-2023 bear market period
+
+### Future Portfolio Directions (not part of current milestone)
+
+- Non-equal weighting (Sharpe-weighted, inverse-drawdown, risk-parity style)
+- Rolling portfolio allocation with periodic rebalancing
+- Portfolio-level volatility targeting
+- Live allocation sizing given real margin and capital constraints
+
+---
+
+## 9. Research Log — Closed Directions
 
 | Direction | Outcome |
 |-----------|---------|
@@ -157,12 +211,21 @@ All three segments: positive return, Sharpe > 1.3. Most consistent asset in the 
 
 ---
 
-## 9. Next Directions
+## 10. Research Cycle Status
 
-| Priority | Task | Status |
-|----------|------|--------|
-| 1 | Formal expanding-window walk-forward OOS test | **Next** |
-| 2 | Multi-asset portfolio correlation and combined equity curve | After OOS |
-| — | Silver stop optimization | Closed |
-| — | AAPL State-2 entry quality | Closed |
-| — | Position sizing optimization | Closed (Silver VT1 applied) |
+| Direction | Status |
+|-----------|--------|
+| Silver stop optimization | **Closed** — break-even net-negative |
+| AAPL State-2 entry quality | **Closed** — no issue after hold_mult fix |
+| OOS robustness report | **Closed** — v1 report produced |
+| Position sizing optimization | **Closed** — Silver VT1 applied |
+| Expanding-window OOS test | **Closed** — GC=F/SI=F stable; AAPL structural weakness documented |
+| Multi-asset portfolio | **Closed** — equal-weight baseline established |
+
+**This research cycle is complete.** All planned Next Directions have been addressed. The v4 baseline (per-asset parameters + equal-weight portfolio) is the official deliverable of this cycle.
+
+### If a new cycle begins, natural entry points are:
+- Non-equal portfolio weighting (risk-parity, Sharpe-weighted)
+- AAPL HMM drift mitigation (regime-adaptive retraining, feature engineering)
+- Live trading infrastructure (execution, slippage modeling, margin management)
+- Expanding the asset universe
