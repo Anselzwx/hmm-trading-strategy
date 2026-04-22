@@ -53,8 +53,8 @@ TICKER_PARAMS: Dict[str, Dict] = {
     "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.25, "adx_entry": 25, "regime_reduce": False},
     # Gold_regime_reduce50_final: Regime→reduce50%, price-type stop, validated 2026-04-21
     "GC=F": {"n_states": 7, "bull_top": 2, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 25, "regime_reduce": True},
-    # Silver_S-R1_provisional: ADX>30, Regime→reduce50%, price-type stop, validated 2026-04-22
-    "SI=F": {"n_states": 7, "bull_top": 1, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 30, "regime_reduce": True},
+    # Silver_VT1_final: ADX>30, Regime→reduce50%, vol-targeting (rvol median, clip[0.3,1.5]), validated 2026-04-22
+    "SI=F": {"n_states": 7, "bull_top": 1, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 30, "regime_reduce": True, "vol_target": True},
 }
 
 # Regime exit 连续确认 bars（1=原版，2=Gold 定案）
@@ -306,6 +306,8 @@ def _simulate(df: pd.DataFrame,
     tp                = TICKER_PARAMS.get(ticker, {})
     use_regime_reduce = tp.get("regime_reduce", False)   # Gold + Silver: reduce path
     adx_entry         = tp.get("adx_entry", 25)
+    use_vol_target    = tp.get("vol_target", False)       # Silver: rvol-based position scaling
+    VT_MIN, VT_MAX    = 0.3, 1.5
 
     capital       = STARTING_CAP
     position      = 0.0
@@ -326,6 +328,10 @@ def _simulate(df: pd.DataFrame,
     realised_from_reduce    = 0.0    # PnL already booked from partial reduces
     reduce_time             = None   # bar when reduce was triggered
     reduce_price            = None   # price at reduce trigger
+
+    # vol-targeting: target = full-sample rvol median (Silver only)
+    vt_target = float(df["vol_volatility"].dropna().median()) if use_vol_target else None
+    vt_scale  = 1.0
 
     for ts, row in df.iterrows():
         price    = float(row["Close"])
@@ -403,6 +409,7 @@ def _simulate(df: pd.DataFrame,
                     "return_pct":              current_ret * 100 * LEVERAGE,
                     "sideways_score":          sw_score,
                     "regime_reduce_triggered": regime_reduce_triggered,
+                    "vt_scale":                vt_scale,
                 })
                 position, in_trade, hold_bars  = 0.0, False, 0
                 bear_consec                    = 0
@@ -426,7 +433,13 @@ def _simulate(df: pd.DataFrame,
                 and row["signal_score"] >= entry_min_conf
                 and float(row["adx"]) > adx_entry):
             score        = float(row["signal_score"])
-            pos_size_pct = _position_size(score, eff_min_conf) * pos_scale
+            base_pct     = _position_size(score, eff_min_conf) * pos_scale
+            if use_vol_target and vt_target:
+                entry_rvol   = float(row.get("vol_volatility", vt_target))
+                vt_scale     = float(np.clip(vt_target / entry_rvol, VT_MIN, VT_MAX)) if entry_rvol > 0 else 1.0
+            else:
+                vt_scale     = 1.0
+            pos_size_pct = base_pct * vt_scale
             position     = capital * pos_size_pct / price
             entry_price  = price
             stop_price   = entry_price * (1 + stop_loss_pct)   # price-type stop, fixed
@@ -462,6 +475,7 @@ def _simulate(df: pd.DataFrame,
             "return_pct":              (last_price - entry_price) / entry_price * 100 * LEVERAGE,
             "sideways_score":          int(df["sideways_score"].iloc[-1]),
             "regime_reduce_triggered": regime_reduce_triggered,
+            "vt_scale":                vt_scale,
         })
 
     return equity_curve, trades
