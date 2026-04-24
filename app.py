@@ -344,7 +344,7 @@ def equity_chart(df: pd.DataFrame) -> go.Figure:
                         row_heights=[0.65, 0.35], vertical_spacing=0.03)
     fig.add_trace(go.Scatter(x=df.index, y=df["equity"], mode="lines",
         line=dict(color="#00e676", width=2), fill="tozeroy",
-        fillcolor="rgba(0,230,118,0.06)", name="策略 (2.5× 杠杆)"), row=1, col=1)
+        fillcolor="rgba(0,230,118,0.06)", name=f"策略 ({LEVERAGE}× 杠杆)"), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=bh, mode="lines",
         line=dict(color="#60a5fa", width=1.5, dash="dash"), name="买入持有"), row=1, col=1)
 
@@ -897,7 +897,7 @@ def render_asset(ticker: str) -> None:
     with cols[2]: st.markdown(_metric("最大回撤",    f"{metrics['max_drawdown_pct']:.1f}%",
                                                       "峰值→谷值", "red"), unsafe_allow_html=True)
     with cols[3]: st.markdown(_metric("最终资本",    f"${metrics['final_capital']:,.0f}",
-                                                      f"起始 ${STARTING_CAP:,.0f} · 2.5×", "yellow"), unsafe_allow_html=True)
+                                                      f"起始 ${STARTING_CAP:,.0f} · {LEVERAGE}×", "yellow"), unsafe_allow_html=True)
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
     cols2 = st.columns(4, gap="small")
@@ -1039,7 +1039,7 @@ def render_asset(ticker: str) -> None:
             ("信号阈值",        f"{min_conf} / 14"),
             ("固定止损",        f"{stop*100:.0f}%（触价退出）"),
             ("Regime Filter",   f"诊断层 · ADX>{adx_thresh} + EMA50↑ + EMA50>EMA200"),
-            ("杠杆",            "固定 2.5×"),
+            ("杠杆",            f"固定 {LEVERAGE}×"),
             ("冷静期",          cooldown_str),
             ("最大持仓",        max_hold_str),
             ("HMM 训练",        "Walk-Forward 滚动"),
@@ -1184,34 +1184,39 @@ def render_signals_tab() -> None:
             </div>""", unsafe_allow_html=True)
 
         with cb:
-            bull_bar = int(bull_prob * 100)
-            bear_bar = int(bear_prob * 100)
-            post_html = ""
+            bull_bar    = int(bull_prob * 100)
+            bear_bar    = int(bear_prob * 100)
+            score_color = '#00e676' if score >= min_conf else '#ffd740'
+            adx_color   = '#00e676' if adx > adx_entry  else '#ff5252'
+            vt_html     = f'&nbsp; VT <b style="color:#a78bfa">{vt:.3f}</b>' if vt else ''
+            bars_html   = ""
             if posterior:
-                post_html = '<div style="display:flex;gap:2px;margin-top:8px;align-items:flex-end">'
                 top_idx = int(np.argmax(posterior))
+                bars_html = '<div style="display:flex;gap:2px;margin-top:8px;align-items:flex-end">'
                 for i, p in enumerate(posterior):
                     h   = max(4, int(p * 60))
-                    col = "#00e676" if i == top_idx else "rgba(96,165,250,0.4)"
-                    post_html += (f'<div style="flex:1;display:flex;flex-direction:column;align-items:center">'
-                                  f'<div style="background:{col};height:{h}px;width:100%;border-radius:2px 2px 0 0"></div>'
-                                  f'<div style="font-size:0.5rem;color:#475569">{i}</div></div>')
-                post_html += '</div>'
-            st.markdown(f"""<div class="glass-card" style="padding:16px">
-                <div style="font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">HMM Regime</div>
-                <span class="regime-pill {pc}">{regime}</span>
-                <div style="margin-top:10px;font-size:0.72rem">
-                    <span style="color:#00e676">Bull {bull_bar}%</span> &nbsp;·&nbsp;
-                    <span style="color:#ff5252">Bear {bear_bar}%</span>
-                </div>
-                <div style="margin-top:6px;font-size:0.72rem;color:#64748b">
-                    Score <b style="color:{'#00e676' if score>=min_conf else '#ffd740'}">{score}/{14}</b> &nbsp;
-                    ADX <b style="color:{'#00e676' if adx>adx_entry else '#ff5252'}">{adx:.1f}</b> &nbsp;
-                    SW <b style="color:#64748b">{sw}/4</b>
-                    {f'&nbsp; VT <b style="color:#a78bfa">{vt:.3f}</b>' if vt else ''}
-                </div>
-                {post_html}
-            </div>""", unsafe_allow_html=True)
+                    col = "#00e676" if i == top_idx else "#3b82f6"
+                    bars_html += (
+                        '<div style="flex:1;display:flex;flex-direction:column;align-items:center">'
+                        f'<div style="background:{col};height:{h}px;width:100%;border-radius:2px 2px 0 0"></div>'
+                        f'<div style="font-size:0.5rem;color:#475569">{i}</div></div>'
+                    )
+                bars_html += '</div>'
+            card = (
+                '<div class="glass-card" style="padding:16px">'
+                '<div style="font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">HMM Regime</div>'
+                f'<span class="regime-pill {pc}">{regime}</span>'
+                '<div style="margin-top:10px;font-size:0.72rem">'
+                f'<span style="color:#00e676">Bull {bull_bar}%</span> &nbsp;·&nbsp; '
+                f'<span style="color:#ff5252">Bear {bear_bar}%</span></div>'
+                '<div style="margin-top:6px;font-size:0.72rem;color:#64748b">'
+                f'Score <b style="color:{score_color}">{score}/14</b> &nbsp;'
+                f'ADX <b style="color:{adx_color}">{adx:.1f}</b> &nbsp;'
+                f'SW <b style="color:#64748b">{sw}/4</b>{vt_html}</div>'
+                f'{bars_html}'
+                '</div>'
+            )
+            st.markdown(card, unsafe_allow_html=True)
 
         with cc:
             det_items = [
@@ -1233,17 +1238,19 @@ def render_signals_tab() -> None:
             n_pass = sum(1 for _, ok, _ in det_items if ok)
             pct    = n_pass / len(det_items)
             bar_c  = _score_color(pct)
+            left_rows  = "".join(_sig_row(nm, ok, vl) for nm, ok, vl in det_items[:7])
+            right_rows = "".join(_sig_row(nm, ok, vl) for nm, ok, vl in det_items[7:])
             st.markdown(f"""<div class="glass-card" style="padding:14px 18px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
                     <span style="font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px">14 信号明细</span>
                     <span style="font-size:1rem;font-weight:800;color:{bar_c}">{n_pass}/{len(det_items)}</span>
                 </div>
                 <div class="score-outer"><div class="score-inner" style="width:{int(pct*100)}%;background:{bar_c};opacity:0.85"></div></div>
-            """, unsafe_allow_html=True)
-            col_a, col_b = st.columns(2)
-            col_a.markdown("".join(_sig_row(nm, ok, vl) for nm, ok, vl in det_items[:7]), unsafe_allow_html=True)
-            col_b.markdown("".join(_sig_row(nm, ok, vl) for nm, ok, vl in det_items[7:]), unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:6px">
+                    <div>{left_rows}</div>
+                    <div>{right_rows}</div>
+                </div>
+            </div>""", unsafe_allow_html=True)
 
         st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
 
@@ -1340,7 +1347,9 @@ def render_portfolio_tab() -> None:
                  "MaxDD":  f"{pmdd:.1f}%",
                  "Calmar": f"{pcal:.1f}",
                  "Trades": "—"})
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    df_rows = pd.DataFrame(rows)
+    df_rows["Trades"] = df_rows["Trades"].astype(str)
+    st.dataframe(df_rows, use_container_width=True, hide_index=True)
 
     # 摩擦成本说明
     st.markdown('<div class="section-header">💸 摩擦成本 & 保证金参数</div>', unsafe_allow_html=True)
@@ -1393,7 +1402,7 @@ def main() -> None:
         </div>
         <div class="page-sub" style="margin-left:{58 if logo else 0}px">
             Gaussian HMM &nbsp;·&nbsp; 14-Signal Voting &nbsp;·&nbsp;
-            2.5× Leverage &nbsp;·&nbsp; Walk-Forward &nbsp;·&nbsp; 数据截至 {_computed_at()}
+            {LEVERAGE}× Leverage &nbsp;·&nbsp; Walk-Forward &nbsp;·&nbsp; 数据截至 {_computed_at()}
         </div>""", unsafe_allow_html=True)
     with hc2:
         st.write("")

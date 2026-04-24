@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore")
 # 全局默认常量
 # ============================================================
 N_STATES          = 7
-LEVERAGE          = 2.5
+LEVERAGE          = 1.0
 STARTING_CAP      = 10_000.0
 MIN_CONFIRMATIONS = 9
 TOTAL_SIGNALS     = 14
