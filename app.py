@@ -792,11 +792,10 @@ def _sig_row(name: str, ok: bool, val: str) -> str:
 # XGBoost 多因子预测面板（Gold 专属）
 # ──────────────────────────────────────────────────────────────
 
-_XGB_DIR          = os.path.join(os.path.dirname(__file__), "xgb_model")
-XGB_FEATURES_CSV  = os.path.join(_XGB_DIR, "features.csv")
-XGB_MODEL_CLS     = os.path.join(_XGB_DIR, "model_cls.pkl")
-XGB_MODEL_REG     = os.path.join(_XGB_DIR, "model_reg.pkl")
-XGB_FEATURE_COLS  = os.path.join(_XGB_DIR, "feature_cols.json")
+XGB_FEATURES_CSV  = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/features.csv"
+XGB_MODEL_CLS     = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/models/model_cls.pkl"
+XGB_MODEL_REG     = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/models/model_reg.pkl"
+XGB_FEATURE_COLS  = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/models/feature_cols.json"
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_xgb_prediction():
@@ -821,7 +820,7 @@ def _load_xgb_prediction():
         top_idx = np.argsort(np.abs(shap_vals))[::-1][:10]
         shap_top = [(feature_cols[i], float(shap_vals[i]), float(X_last.iloc[0, i])) for i in top_idx]
         # 历史预测准确率（用 predict.csv 里的记录）
-        pred_df = pd.read_csv(os.path.join(_XGB_DIR, "predict.csv"),
+        pred_df = pd.read_csv("/Users/zhaowenxuan/Desktop/公司文件/news-analysis/predict.csv",
                               index_col=0, parse_dates=True)
         pred_df.columns = ["down", "flat", "up"] if len(pred_df.columns) == 3 else pred_df.columns
         return {

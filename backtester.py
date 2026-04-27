@@ -82,25 +82,15 @@ BEAR_CONFIRM: Dict[str, int] = {
 # 1. HMM 引擎
 # ============================================================
 
-def fit_hmm(features: np.ndarray, n_states: int = N_STATES, n_trials: int = 5) -> hmm.GaussianHMM:
-    best_model, best_score = None, -np.inf
-    for seed in range(RANDOM_SEED, RANDOM_SEED + n_trials):
-        m = hmm.GaussianHMM(
-            n_components=n_states,
-            covariance_type="full",
-            n_iter=200,
-            tol=1e-4,
-            random_state=seed,
-        )
-        try:
-            m.fit(features)
-            score = m.score(features)
-            if score > best_score:
-                best_score = score
-                best_model = m
-        except Exception:
-            continue
-    model = best_model
+def fit_hmm(features: np.ndarray, n_states: int = N_STATES) -> hmm.GaussianHMM:
+    model = hmm.GaussianHMM(
+        n_components=n_states,
+        covariance_type="full",
+        n_iter=200,
+        tol=1e-4,
+        random_state=RANDOM_SEED,
+    )
+    model.fit(features)
     tm = model.transmat_
     row_sums = tm.sum(axis=1, keepdims=True)
     zero_rows = (row_sums == 0).flatten()
