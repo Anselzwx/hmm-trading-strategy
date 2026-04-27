@@ -821,7 +821,7 @@ def _load_xgb_prediction():
         top_idx = np.argsort(np.abs(shap_vals))[::-1][:10]
         shap_top = [(feature_cols[i], float(shap_vals[i]), float(X_last.iloc[0, i])) for i in top_idx]
         # 历史预测准确率（用 predict.csv 里的记录）
-        pred_df = pd.read_csv("/Users/zhaowenxuan/Desktop/公司文件/news-analysis/predict.csv",
+        pred_df = pd.read_csv(os.path.join(_XGB_DIR, "predict.csv"),
                               index_col=0, parse_dates=True)
         pred_df.columns = ["down", "flat", "up"] if len(pred_df.columns) == 3 else pred_df.columns
         return {
