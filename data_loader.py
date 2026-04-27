@@ -5,10 +5,12 @@ OHLCV 数据加载器，使用 Financial Modeling Prep API。
 
 - AAPL / GCUSD / SIUSD：全部使用日线，10年历史（2016-01-01 至今）
 - 缓存 1 小时，避免重复请求
+- 宏观因子：从 investing_macro_data.db 读取，forward-fill 到每个交易日
 """
 
 import os
 import pickle
+import sqlite3
 import requests
 from datetime import datetime, timedelta
 
@@ -21,6 +23,20 @@ CACHE_TTL_HOURS = 1
 FMP_API_KEY     = "1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p"
 FMP_START       = "2016-01-01"
 FMP_BASE        = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+
+MACRO_DB = os.environ.get(
+    "MACRO_DB_PATH",
+    "/Users/zhaowenxuan/Desktop/公司文件/黄金交接/investing_macro_data.db"
+)
+
+# 宏观指标表名 → 输出列名
+MACRO_TABLES = {
+    "美国CPI月率":          "cpi_mom",
+    "美国核心CPI月率":      "core_cpi_mom",
+    "美国核心PCE物价指数月率": "core_pce_mom",
+    "美国初请失业金人数":   "jobless_claims",
+    "美国ISM制造业PMI":     "ism_pmi",
+}
 
 # 所有 ticker 统一日线
 DAILY_TICKERS = {"GC=F", "SI=F", "AAPL"}
@@ -67,6 +83,55 @@ def _save_cache(ticker: str, df: pd.DataFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 宏观数据
+# ---------------------------------------------------------------------------
+
+def _parse_value(s) -> float:
+    """把 '0.3%' / '227K' / '52.6' 等字符串转成 float。"""
+    if s is None:
+        return float("nan")
+    s = str(s).strip().replace("%", "").replace("K", "e3").replace("M", "e6").replace("B", "e9")
+    try:
+        return float(s)
+    except ValueError:
+        return float("nan")
+
+
+def load_macro() -> pd.DataFrame:
+    """
+    从 investing_macro_data.db 读取关键宏观指标，
+    解析今值，以发布日期为索引，forward-fill 到日频。
+    返回 DataFrame，index 为 DatetimeIndex（日频）。
+    """
+    if not os.path.exists(MACRO_DB):
+        return pd.DataFrame()
+
+    conn = sqlite3.connect(MACRO_DB)
+    series = {}
+    for table, col in MACRO_TABLES.items():
+        try:
+            df = pd.read_sql(f'SELECT datetime, 今值 FROM "{table}"', conn, parse_dates=["datetime"])
+            df = df.dropna(subset=["今值"])
+            df["value"] = df["今值"].apply(_parse_value)
+            df = df.dropna(subset=["value"])
+            df = df.set_index("datetime")["value"].sort_index()
+            # 去重：同一天取最后一条
+            df = df[~df.index.duplicated(keep="last")]
+            series[col] = df
+        except Exception:
+            pass
+    conn.close()
+
+    if not series:
+        return pd.DataFrame()
+
+    macro = pd.DataFrame(series)
+    # 重采样到日频，forward-fill（月度数据填充到每个交易日）
+    macro = macro.resample("D").last().ffill()
+    return macro
+
+
+# ---------------------------------------------------------------------------
 # 下载
 # ---------------------------------------------------------------------------
 
@@ -101,21 +166,32 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
     """
     返回带以下列的 DataFrame：
         Open, High, Low, Close, Volume,
-        returns, range_pct, vol_volatility   ← HMM 特征
+        returns, range_pct, vol_volatility,   ← 价格特征
+        cpi_mom, core_cpi_mom, core_pce_mom,  ← 宏观特征（forward-fill）
+        jobless_claims, ism_pmi
     """
     if not force_refresh and _cache_is_fresh(ticker):
         return _load_cache(ticker)
 
     df = _fetch_fmp(ticker)
 
-    # 特征 1：对数收益率 (%)
-    df["returns"] = np.log(df["Close"] / df["Close"].shift(1)) * 100
-
-    # 特征 2：价格区间占收盘价比例
-    df["range_pct"] = (df["High"] - df["Low"]) / df["Close"] * 100
-
-    # 特征 3：5日滚动收益率标准差
+    # 价格特征
+    df["returns"]       = np.log(df["Close"] / df["Close"].shift(1)) * 100
+    df["range_pct"]     = (df["High"] - df["Low"]) / df["Close"] * 100
     df["vol_volatility"] = df["returns"].rolling(5, min_periods=3).std()
+
+    # 拼入宏观特征
+    macro = load_macro()
+    if not macro.empty:
+        macro.index = macro.index.tz_localize(None)
+        df = df.join(macro, how="left")
+        # 对宏观列做标准化（z-score），避免量纲差异影响 HMM
+        for col in MACRO_TABLES.values():
+            if col in df.columns:
+                mu, sigma = df[col].mean(), df[col].std()
+                if sigma > 0:
+                    df[col] = (df[col] - mu) / sigma
+                df[col] = df[col].ffill()
 
     df.dropna(inplace=True)
     _save_cache(ticker, df)
@@ -123,4 +199,6 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
 
 
 def get_hmm_features(df: pd.DataFrame) -> "np.ndarray":
-    return df[["returns", "range_pct", "vol_volatility"]].values
+    base = ["returns", "range_pct", "vol_volatility"]
+    macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
+    return df[base + macro_cols].values
