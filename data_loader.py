@@ -21,7 +21,7 @@ import pandas as pd
 CACHE_DIR       = os.path.dirname(__file__)
 CACHE_TTL_HOURS = 1
 FMP_API_KEY     = "1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p"
-FMP_START       = "2016-01-01"
+FMP_START       = "2000-01-01"
 FMP_BASE        = "https://financialmodelingprep.com/stable/historical-price-eod/full"
 
 MACRO_DB = os.environ.get(
@@ -39,19 +39,25 @@ MACRO_TABLES = {
 }
 
 # 所有 ticker 统一日线
-DAILY_TICKERS = {"GC=F", "SI=F", "AAPL"}
+DAILY_TICKERS = {"GC=F", "SI=F", "AAPL", "PL=F", "HG=F", "PA=F"}
 
 # ticker → FMP symbol 映射
 FMP_SYMBOL = {
     "AAPL": "AAPL",
     "GC=F": "GCUSD",
     "SI=F": "SIUSD",
+    "PL=F": "PLUSD",
+    "HG=F": "HGUSD",
+    "PA=F": "PAUSD",
 }
 
 ASSET_LABELS = {
     "AAPL": "Apple Inc. (AAPL)",
     "GC=F": "Gold Futures (GOLD)",
     "SI=F": "Silver Futures (SILVER)",
+    "PL=F": "Platinum Futures (PLATINUM)",
+    "HG=F": "Copper Futures (COPPER)",
+    "PA=F": "Palladium Futures (PALLADIUM)",
 }
 
 
