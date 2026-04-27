@@ -687,6 +687,90 @@ def hold_duration_chart(trades: list, is_daily: bool) -> go.Figure:
     return fig
 
 
+# ── 8. 各 HMM 状态宏观特征均值雷达/柱状图 ────────────────────
+def macro_by_regime_chart(df: pd.DataFrame) -> go.Figure:
+    from data_loader import MACRO_TABLES
+    macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
+    if not macro_cols or "regime_label" not in df.columns:
+        return go.Figure()
+
+    MACRO_LABELS = {
+        "cpi_mom":       "CPI月率",
+        "core_cpi_mom":  "核心CPI月率",
+        "core_pce_mom":  "核心PCE月率",
+        "jobless_claims":"初请失业金",
+        "ism_pmi":       "ISM PMI",
+    }
+
+    grp = df.groupby("regime_label")[macro_cols].mean().reset_index()
+    fig = go.Figure()
+    for _, row in grp.iterrows():
+        label = row["regime_label"]
+        vals  = [row[c] for c in macro_cols]
+        fig.add_trace(go.Bar(
+            name=label,
+            x=[MACRO_LABELS.get(c, c) for c in macro_cols],
+            y=vals,
+            marker_color=_regime_color(label),
+            opacity=0.85,
+        ))
+    fig.update_layout(
+        **_base_layout(height=320),
+        barmode="group",
+        title=dict(text="各 Regime 宏观特征均值（z-score）", font=dict(size=12, color="#94a3b8"), x=0),
+        yaxis=dict(title="z-score", gridcolor="rgba(255,255,255,0.05)"),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+    )
+    return fig
+
+
+# ── 9. 宏观指标时序图（叠加 Regime 背景色） ──────────────────
+def macro_timeseries_chart(df: pd.DataFrame) -> go.Figure:
+    from data_loader import MACRO_TABLES
+    macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
+    if not macro_cols or "regime_label" not in df.columns:
+        return go.Figure()
+
+    MACRO_LABELS = {
+        "cpi_mom":       "CPI月率",
+        "core_cpi_mom":  "核心CPI月率",
+        "core_pce_mom":  "核心PCE月率",
+        "jobless_claims":"初请失业金",
+        "ism_pmi":       "ISM PMI",
+    }
+    COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa"]
+
+    fig = go.Figure()
+
+    # Regime 背景色条
+    if len(df):
+        prev, t0 = df["regime_label"].iloc[0], df.index[0]
+        for ts, lbl in zip(df.index[1:], df["regime_label"].iloc[1:]):
+            if lbl != prev:
+                fig.add_vrect(x0=t0, x1=ts, fillcolor=_bg(prev),
+                              line_width=0, layer="below")
+                t0, prev = ts, lbl
+        fig.add_vrect(x0=t0, x1=df.index[-1], fillcolor=_bg(prev),
+                      line_width=0, layer="below")
+
+    for col, color in zip(macro_cols, COLORS):
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df[col],
+            name=MACRO_LABELS.get(col, col),
+            line=dict(color=color, width=1.5),
+            opacity=0.9,
+        ))
+
+    fig.update_layout(
+        **_base_layout(height=300),
+        title=dict(text="宏观指标时序（z-score · 背景色=Regime）",
+                   font=dict(size=12, color="#94a3b8"), x=0),
+        yaxis=dict(title="z-score", gridcolor="rgba(255,255,255,0.05)"),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+    )
+    return fig
+
+
 # ──────────────────────────────────────────────────────────────
 # UI 组件
 # ──────────────────────────────────────────────────────────────
@@ -702,6 +786,179 @@ def _sig_row(name: str, ok: bool, val: str) -> str:
     icon = '<span class="sig-pass">●</span>' if ok else '<span class="sig-fail">●</span>'
     return (f'<div class="sig-row">{icon} <span class="sig-name">{name}</span>'
             f'<span class="sig-val">{val}</span></div>')
+
+
+# ──────────────────────────────────────────────────────────────
+# XGBoost 多因子预测面板（Gold 专属）
+# ──────────────────────────────────────────────────────────────
+
+XGB_FEATURES_CSV  = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/features.csv"
+XGB_MODEL_CLS     = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/models/model_cls.pkl"
+XGB_MODEL_REG     = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/models/model_reg.pkl"
+XGB_FEATURE_COLS  = "/Users/zhaowenxuan/Desktop/公司文件/sankey_gold/models/feature_cols.json"
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_xgb_prediction():
+    import pickle, json, shap
+    try:
+        with open(XGB_MODEL_CLS, "rb") as f:
+            model_cls = pickle.load(f)
+        with open(XGB_MODEL_REG, "rb") as f:
+            model_reg = pickle.load(f)
+        with open(XGB_FEATURE_COLS) as f:
+            feature_cols = json.load(f)
+        df = pd.read_csv(XGB_FEATURES_CSV, parse_dates=["date"])
+        X_last = df[feature_cols].iloc[[-1]]
+        last_date = df["date"].iloc[-1]
+        proba = model_cls.predict_proba(X_last)[0]
+        pred_reg = float(model_reg.predict(X_last)[0])
+        # SHAP
+        explainer = shap.TreeExplainer(model_cls)
+        sv = explainer.shap_values(X_last)
+        sv_arr = np.array(sv)
+        shap_vals = sv_arr[0].flatten()
+        top_idx = np.argsort(np.abs(shap_vals))[::-1][:10]
+        shap_top = [(feature_cols[i], float(shap_vals[i]), float(X_last.iloc[0, i])) for i in top_idx]
+        # 历史预测准确率（用 predict.csv 里的记录）
+        pred_df = pd.read_csv("/Users/zhaowenxuan/Desktop/公司文件/news-analysis/predict.csv",
+                              index_col=0, parse_dates=True)
+        pred_df.columns = ["down", "flat", "up"] if len(pred_df.columns) == 3 else pred_df.columns
+        return {
+            "last_date":   last_date,
+            "proba":       proba,
+            "pred_reg":    pred_reg,
+            "classes":     list(model_cls.classes_),
+            "shap_top":    shap_top,
+            "pred_df":     pred_df,
+            "accuracy":    0.5778,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def render_xgb_panel():
+    st.markdown('<div class="section-header">🤖 XGBoost 多因子预测（Gold 专属）</div>',
+                unsafe_allow_html=True)
+    with st.spinner("加载 XGBoost 预测…"):
+        xgb = _load_xgb_prediction()
+    if "error" in xgb:
+        st.warning(f"XGBoost 加载失败：{xgb['error']}")
+        return
+
+    proba     = xgb["proba"]
+    pred_reg  = xgb["pred_reg"]
+    classes   = xgb["classes"]
+    shap_top  = xgb["shap_top"]
+    last_date = xgb["last_date"]
+    accuracy  = xgb["accuracy"]
+
+    # 二分类：0=跌 1=涨
+    if len(proba) == 2:
+        down_p, up_p = float(proba[0]), float(proba[1])
+        flat_p = 0.0
+    else:
+        down_p, flat_p, up_p = float(proba[0]), float(proba[1]), float(proba[2])
+
+    direction  = "📈 看涨" if up_p >= 0.6 else ("📉 看跌" if down_p >= 0.6 else "➡️ 震荡")
+    dir_color  = "#00e676" if up_p >= 0.6 else ("#ff5252" if down_p >= 0.6 else "#ffd740")
+    reg_color  = "#00e676" if pred_reg > 0 else "#ff5252"
+
+    # 与 HMM 信号一致性
+    try:
+        sig_data = _load_latest_signal()
+        hmm_action = sig_data["signals"].get("GC=F", {}).get("action_if_long", "") if sig_data else ""
+        hmm_bull   = sig_data["signals"].get("GC=F", {}).get("is_bull", False) if sig_data else False
+        xgb_bull   = up_p >= 0.6
+        aligned    = (hmm_bull and xgb_bull) or (not hmm_bull and not xgb_bull)
+        align_html = (
+            '<span style="color:#00e676;font-weight:700">✅ 双模型共振</span>' if aligned
+            else '<span style="color:#ffd740;font-weight:700">⚠️ 信号分歧</span>'
+        )
+    except Exception:
+        align_html = '<span style="color:#475569">—</span>'
+
+    # 顶部指标卡
+    c1, c2, c3, c4 = st.columns(4)
+    c1.markdown(
+        '<div class="glass-card" style="text-align:center;padding:16px">'
+        '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">明日方向</div>'
+        f'<div style="font-size:1.6rem;font-weight:800;color:{dir_color}">{direction}</div>'
+        f'<div style="font-size:0.7rem;color:#64748b;margin-top:4px">数据截至 {str(last_date)[:10]}</div>'
+        '</div>', unsafe_allow_html=True)
+    c2.markdown(
+        '<div class="glass-card" style="text-align:center;padding:16px">'
+        '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">涨跌概率</div>'
+        f'<div style="font-size:1rem;font-weight:700;color:#00e676">涨 {up_p:.1%}</div>'
+        f'<div style="font-size:1rem;font-weight:700;color:#ff5252">跌 {down_p:.1%}</div>'
+        '</div>', unsafe_allow_html=True)
+    c3.markdown(
+        '<div class="glass-card" style="text-align:center;padding:16px">'
+        '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">预测收益率</div>'
+        f'<div style="font-size:1.6rem;font-weight:800;color:{reg_color}">{pred_reg*100:+.2f}%</div>'
+        '<div style="font-size:0.7rem;color:#64748b;margin-top:4px">XGBoost 回归</div>'
+        '</div>', unsafe_allow_html=True)
+    c4.markdown(
+        '<div class="glass-card" style="text-align:center;padding:16px">'
+        '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">模型准确率</div>'
+        f'<div style="font-size:1.6rem;font-weight:800;color:#a78bfa">{accuracy:.1%}</div>'
+        f'<div style="margin-top:6px">{align_html}</div>'
+        '</div>', unsafe_allow_html=True)
+
+    # SHAP Top10 因子图
+    st.markdown('<div style="height:0.4rem"></div>', unsafe_allow_html=True)
+    col_shap, col_prob = st.columns([1.6, 1], gap="medium")
+
+    with col_shap:
+        st.markdown('<div class="section-header" style="font-size:0.75rem">🔍 SHAP 因子贡献（Top 10）</div>',
+                    unsafe_allow_html=True)
+        names  = [s[0] for s in shap_top]
+        values = [s[1] for s in shap_top]
+        colors = ["#00e676" if v > 0 else "#ff5252" for v in values]
+        fig_shap = go.Figure(go.Bar(
+            x=values[::-1], y=names[::-1],
+            orientation="h",
+            marker_color=colors[::-1],
+            marker_opacity=0.85,
+            text=[f"{v:+.3f}" for v in values[::-1]],
+            textposition="outside",
+            textfont=dict(size=10, color="#94a3b8"),
+        ))
+        fig_shap.update_layout(
+            height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=10, r=60, t=10, b=10),
+            xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=True,
+                       zerolinecolor="rgba(255,255,255,0.2)"),
+            yaxis=dict(gridcolor="rgba(255,255,255,0.05)", tickfont=dict(size=10, color="#94a3b8")),
+            showlegend=False, font=dict(color="#94a3b8"),
+        )
+        st.plotly_chart(fig_shap, use_container_width=True)
+
+    with col_prob:
+        st.markdown('<div class="section-header" style="font-size:0.75rem">📊 涨跌概率分布</div>',
+                    unsafe_allow_html=True)
+        labels = ["看跌", "看涨"] if len(proba) == 2 else ["看跌", "震荡", "看涨"]
+        prob_vals = [down_p, up_p] if len(proba) == 2 else [down_p, flat_p, up_p]
+        prob_colors = ["#ff5252", "#00e676"] if len(proba) == 2 else ["#ff5252", "#ffd740", "#00e676"]
+        fig_prob = go.Figure(go.Bar(
+            x=labels, y=prob_vals,
+            marker_color=prob_colors, marker_opacity=0.85,
+            text=[f"{v:.1%}" for v in prob_vals],
+            textposition="outside",
+            textfont=dict(size=12, color="#e2e8f0"),
+        ))
+        fig_prob.update_layout(
+            height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+            yaxis=dict(gridcolor="rgba(255,255,255,0.05)", tickformat=".0%", range=[0, 1]),
+            showlegend=False, font=dict(color="#94a3b8"),
+        )
+        st.plotly_chart(fig_prob, use_container_width=True)
+
+    st.markdown(
+        '<div style="font-size:0.65rem;color:#334155;margin-top:4px">'
+        '⚠️ XGBoost 模型基于 2022-2026 历史数据训练，方向准确率约 57.8%，仅供参考，不构成投资建议。'
+        '</div>', unsafe_allow_html=True)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -970,6 +1227,15 @@ def render_asset(ticker: str) -> None:
         st.markdown('<div class="section-header">🧩 HMM 状态分布</div>', unsafe_allow_html=True)
         st.plotly_chart(regime_bar(df), use_container_width=True)
 
+    # ── 宏观特征可视化 ────────────────────────────────────────
+    from data_loader import MACRO_TABLES
+    _macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
+    if _macro_cols:
+        st.markdown('<div class="section-header">🌐 宏观指标时序（z-score · 背景色=Regime）</div>', unsafe_allow_html=True)
+        st.plotly_chart(macro_timeseries_chart(df), use_container_width=True)
+        st.markdown('<div class="section-header">📊 各 Regime 宏观特征均值对比</div>', unsafe_allow_html=True)
+        st.plotly_chart(macro_by_regime_chart(df), use_container_width=True)
+
     # ── 各状态收益箱线图 ─────────────────────────────────────
     st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
     st.plotly_chart(regime_return_chart(df, n_states), use_container_width=True)
@@ -1092,6 +1358,10 @@ def render_asset(ticker: str) -> None:
                               "pos_size_pct","pnl","return_pct","hold_bars","exit_reason"]]
         tdf_show.columns = ["入场时间","出场时间","入场Regime","入场价","出场价","仓位","盈亏","收益率","持仓bar","出场原因"]
         st.dataframe(tdf_show, use_container_width=True, hide_index=True)
+
+    # ── XGBoost 多因子预测（仅 Gold）────────────────────────────
+    if ticker == "GC=F":
+        render_xgb_panel()
 
 
 # ──────────────────────────────────────────────────────────────
