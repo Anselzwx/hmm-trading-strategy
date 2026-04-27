@@ -1683,13 +1683,14 @@ def main() -> None:
             st.rerun()
 
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-    tab_sig, tab_port, tab_aapl, tab_gold, tab_silver, tab_nvda = st.tabs([
+    tab_sig, tab_port, tab_aapl, tab_gold, tab_silver, tab_nvda, tab_meta = st.tabs([
         "📡  今日信号",
         "🌐  组合",
         "🍎  Apple (AAPL)",
         "🥇  Gold (GC=F)",
         "🥈  Silver (SI=F)",
         "🟩  NVIDIA (NVDA)",
+        "🔵  Meta (META)",
     ])
     with tab_sig:    render_signals_tab()
     with tab_port:   render_portfolio_tab()
@@ -1697,6 +1698,7 @@ def main() -> None:
     with tab_gold:   render_asset("GC=F")
     with tab_silver: render_asset("SI=F")
     with tab_nvda:   render_asset("NVDA")
+    with tab_meta:   render_asset("META")
 
     st.markdown(
         "<div style='text-align:center;color:#1e293b;font-size:0.7rem;margin-top:2rem'>"

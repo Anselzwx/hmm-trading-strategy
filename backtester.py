@@ -70,6 +70,8 @@ TICKER_PARAMS: Dict[str, Dict] = {
     "SI=F": {"n_states": 7, "bull_top": 1, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 30, "regime_reduce": True, "vol_target": True},
     # NVDA: 高波动成长股，5状态，止损-8%，ADX>25
     "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.25, "adx_entry": 25, "regime_reduce": False},
+    # META: 成长股，5状态，止损-8%，ADX>20，min_conf降低提高频率
+    "META": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
 }
 
 # Regime exit 连续确认 bars（1=原版，2=Gold 定案）
@@ -78,6 +80,7 @@ BEAR_CONFIRM: Dict[str, int] = {
     "GC=F": 2,
     "SI=F": 1,
     "NVDA": 1,
+    "META": 1,
 }
 
 
