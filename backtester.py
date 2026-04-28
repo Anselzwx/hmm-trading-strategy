@@ -72,6 +72,14 @@ TICKER_PARAMS: Dict[str, Dict] = {
     "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.25, "adx_entry": 25, "regime_reduce": False},
     # META: 成长股，5状态，止损-8%，ADX>20，min_conf降低提高频率
     "META": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "AMZN": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "GOOG": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "MSFT": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "TSLA": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 25, "regime_reduce": False},
+    "HOOD": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "SPY":  {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "FXI":  {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "PLTR": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 25, "regime_reduce": False},
 }
 
 # Regime exit 连续确认 bars（1=原版，2=Gold 定案）
@@ -79,8 +87,9 @@ BEAR_CONFIRM: Dict[str, int] = {
     "AAPL": 1,
     "GC=F": 2,
     "SI=F": 1,
-    "NVDA": 1,
-    "META": 1,
+    "NVDA": 1, "META": 1, "AMZN": 1, "GOOG": 1,
+    "MSFT": 1, "TSLA": 1, "HOOD": 1, "SPY":  1,
+    "FXI":  1, "PLTR": 1,
 }
 
 

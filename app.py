@@ -1683,22 +1683,28 @@ def main() -> None:
             st.rerun()
 
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-    tab_sig, tab_port, tab_aapl, tab_gold, tab_silver, tab_nvda, tab_meta = st.tabs([
-        "📡  今日信号",
-        "🌐  组合",
-        "🍎  Apple (AAPL)",
-        "🥇  Gold (GC=F)",
-        "🥈  Silver (SI=F)",
-        "🟩  NVIDIA (NVDA)",
-        "🔵  Meta (META)",
+    tabs = st.tabs([
+        "📡  今日信号", "🌐  组合",
+        "🍎  AAPL", "🥇  Gold", "🥈  Silver",
+        "🟩  NVDA", "🔵  META", "📦  AMZN",
+        "🔍  GOOG", "🪟  MSFT", "⚡  TSLA",
+        "🪶  HOOD", "📊  SPY",  "🇨🇳  FXI", "🛡  PLTR",
     ])
-    with tab_sig:    render_signals_tab()
-    with tab_port:   render_portfolio_tab()
-    with tab_aapl:   render_asset("AAPL")
-    with tab_gold:   render_asset("GC=F")
-    with tab_silver: render_asset("SI=F")
-    with tab_nvda:   render_asset("NVDA")
-    with tab_meta:   render_asset("META")
+    with tabs[0]:  render_signals_tab()
+    with tabs[1]:  render_portfolio_tab()
+    with tabs[2]:  render_asset("AAPL")
+    with tabs[3]:  render_asset("GC=F")
+    with tabs[4]:  render_asset("SI=F")
+    with tabs[5]:  render_asset("NVDA")
+    with tabs[6]:  render_asset("META")
+    with tabs[7]:  render_asset("AMZN")
+    with tabs[8]:  render_asset("GOOG")
+    with tabs[9]:  render_asset("MSFT")
+    with tabs[10]: render_asset("TSLA")
+    with tabs[11]: render_asset("HOOD")
+    with tabs[12]: render_asset("SPY")
+    with tabs[13]: render_asset("FXI")
+    with tabs[14]: render_asset("PLTR")
 
     st.markdown(
         "<div style='text-align:center;color:#1e293b;font-size:0.7rem;margin-top:2rem'>"

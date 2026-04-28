@@ -39,15 +39,16 @@ MACRO_TABLES = {
 }
 
 # 所有 ticker 统一日线
-DAILY_TICKERS = {"GC=F", "SI=F", "AAPL", "NVDA", "META"}
+DAILY_TICKERS = {"GC=F", "SI=F", "AAPL", "NVDA", "META",
+                 "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR"}
 
 # ticker → FMP symbol 映射
 FMP_SYMBOL = {
-    "AAPL": "AAPL",
-    "GC=F": "GCUSD",
-    "SI=F": "SIUSD",
-    "NVDA": "NVDA",
-    "META": "META",
+    "AAPL": "AAPL", "GC=F": "GCUSD", "SI=F": "SIUSD",
+    "NVDA": "NVDA", "META": "META",
+    "AMZN": "AMZN", "GOOG": "GOOG", "MSFT": "MSFT",
+    "TSLA": "TSLA", "HOOD": "HOOD", "SPY":  "SPY",
+    "FXI":  "FXI",  "PLTR": "PLTR",
 }
 
 ASSET_LABELS = {
@@ -56,6 +57,14 @@ ASSET_LABELS = {
     "SI=F": "Silver Futures (SILVER)",
     "NVDA": "NVIDIA Corp. (NVDA)",
     "META": "Meta Platforms (META)",
+    "AMZN": "Amazon (AMZN)",
+    "GOOG": "Alphabet / Google (GOOG)",
+    "MSFT": "Microsoft (MSFT)",
+    "TSLA": "Tesla (TSLA)",
+    "HOOD": "Robinhood (HOOD)",
+    "SPY":  "S&P 500 ETF (SPY)",
+    "FXI":  "China Large-Cap ETF (FXI)",
+    "PLTR": "Palantir (PLTR)",
 }
 
 
