@@ -1008,6 +1008,10 @@ def render_asset(ticker: str) -> None:
     metrics, trades = all_strategies[best_name]
     st.caption(f"📊 最优策略：**策略{best_name}**（Sharpe {metrics.get('sharpe',0):.2f}）")
 
+    # Merge with v1 metrics as fallback so all UI metric keys are always present
+    _base_metrics = res["metrics"]
+    metrics = {**_base_metrics, **metrics}
+
     last     = df.iloc[-1]
     n_states   = res.get("n_states",   N_STATES)
     min_conf   = res.get("min_conf",   MIN_CONFIRMATIONS)
