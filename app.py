@@ -337,18 +337,37 @@ def stoch_cci_chart(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def equity_chart(df: pd.DataFrame) -> go.Figure:
+def equity_chart(df: pd.DataFrame, res: dict = None) -> go.Figure:
     bh  = STARTING_CAP * df["Close"] / df["Close"].iloc[0]
-    dd  = (df["equity"] - df["equity"].cummax()) / df["equity"].cummax() * 100
+    best_eq = df["equity"]
+    dd  = (best_eq - best_eq.cummax()) / best_eq.cummax() * 100
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         row_heights=[0.65, 0.35], vertical_spacing=0.03)
-    fig.add_trace(go.Scatter(x=df.index, y=df["equity"], mode="lines",
-        line=dict(color="#00e676", width=2), fill="tozeroy",
-        fillcolor="rgba(0,230,118,0.06)", name=f"策略 ({LEVERAGE}× 杠杆)"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=bh, mode="lines",
-        line=dict(color="#60a5fa", width=1.5, dash="dash"), name="买入持有"), row=1, col=1)
 
-    # SPY overlay
+    # ── 4条策略线 ──────────────────────────────────────────────
+    strategies = [
+        ("equity",   "🟡 策略A · HMM信号投票",   "#ffd740", 2.0, None),
+        ("equity_b", "🟠 策略B · Trailing Stop",  "#fb923c", 1.5, "dot"),
+        ("equity_c", "🟢 策略C · EMA趋势跟踪",    "#4ade80", 1.5, "dashdot"),
+        ("equity_d", "🔴 策略D · HMM+布林带",     "#f87171", 1.5, "longdash"),
+    ]
+    for key, name, color, width, dash in strategies:
+        eq_data = None
+        if key == "equity":
+            eq_data = df["equity"] if "equity" in df.columns else None
+        elif res is not None:
+            eq_data = res.get(key)
+        if eq_data is not None:
+            fig.add_trace(go.Scatter(
+                x=eq_data.index, y=eq_data, mode="lines", name=name,
+                line=dict(color=color, width=width, dash=dash) if dash else dict(color=color, width=width),
+            ), row=1, col=1)
+
+    # 买入持有
+    fig.add_trace(go.Scatter(x=df.index, y=bh, mode="lines",
+        line=dict(color="#60a5fa", width=1.5, dash="dash"), name="📈 买入持有"), row=1, col=1)
+
+    # SPY
     try:
         spy_raw   = fetch_data("SPY")
         spy_close = spy_raw["Close"]
@@ -361,17 +380,18 @@ def equity_chart(df: pd.DataFrame) -> go.Figure:
         if len(spy_aligned):
             spy_eq = STARTING_CAP * spy_aligned / spy_aligned.iloc[0]
             fig.add_trace(go.Scatter(x=spy_eq.index, y=spy_eq, mode="lines",
-                line=dict(color="#ffd740", width=1.2, dash="dot"), name="SPY"), row=1, col=1)
+                line=dict(color="#94a3b8", width=1.2, dash="dot"), name="⚪ SPY"), row=1, col=1)
     except Exception:
         pass
 
     dd_colors = ["#ff5252" if v < -10 else "#ffd740" if v < -5 else "#00e676" for v in dd]
     fig.add_trace(go.Bar(x=df.index, y=dd, marker_color=dd_colors,
         marker_opacity=0.7, name="回撤 %"), row=2, col=1)
-    layout = _base_layout(height=400)
+    layout = _base_layout(height=460)
     layout["yaxis"]  = dict(gridcolor=GRID_COLOR, tickprefix="$")
     layout["yaxis2"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="回撤")
     layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["legend"] = dict(orientation="h", y=1.08, x=0, font=dict(size=11))
     fig.update_layout(**layout)
     return fig
 
@@ -975,10 +995,20 @@ def render_asset(ticker: str) -> None:
             return
 
     df       = res["df"]
-    trades   = res["trades"]
-    metrics  = res["metrics"]
+    is_daily = res.get("is_daily", True)
+
+    # 选最优策略（Sharpe 最高）
+    all_strategies = {
+        "A · HMM信号投票":  (res["metrics"],   res["trades"]),
+        "B · Trailing Stop": (res.get("metrics_b", {}), res.get("trades_b", [])),
+        "C · EMA趋势跟踪":  (res.get("metrics_c", {}), res.get("trades_c", [])),
+        "D · HMM+布林带":   (res.get("metrics_d", {}), res.get("trades_d", [])),
+    }
+    best_name = max(all_strategies, key=lambda k: all_strategies[k][0].get("sharpe", -999))
+    metrics, trades = all_strategies[best_name]
+    st.caption(f"📊 最优策略：**策略{best_name}**（Sharpe {metrics.get('sharpe',0):.2f}）")
+
     last     = df.iloc[-1]
-    is_daily = res["is_daily"]
     n_states   = res.get("n_states",   N_STATES)
     min_conf   = res.get("min_conf",   MIN_CONFIRMATIONS)
     bull_top   = res.get("bull_top",   2)
@@ -1205,7 +1235,7 @@ def render_asset(ticker: str) -> None:
 
     # ── 资金曲线 + 回撤 ──────────────────────────────────────
     st.markdown('<div class="section-header">💰 资金曲线 vs 买入持有 vs SPY</div>', unsafe_allow_html=True)
-    st.plotly_chart(equity_chart(df), use_container_width=True)
+    st.plotly_chart(equity_chart(df, res), use_container_width=True)
 
     # ── 滚动夏普 ─────────────────────────────────────────────
     st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
