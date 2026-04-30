@@ -339,7 +339,7 @@ def stoch_cci_chart(df: pd.DataFrame) -> go.Figure:
 
 def equity_chart(df: pd.DataFrame, res: dict = None) -> go.Figure:
     bh  = STARTING_CAP * df["Close"] / df["Close"].iloc[0]
-    best_eq = df["equity"]
+    best_eq = df["equity"] / df["equity"].iloc[0] * STARTING_CAP
     dd  = (best_eq - best_eq.cummax()) / best_eq.cummax() * 100
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         row_heights=[0.65, 0.35], vertical_spacing=0.03)
@@ -357,7 +357,8 @@ def equity_chart(df: pd.DataFrame, res: dict = None) -> go.Figure:
             eq_data = df["equity"] if "equity" in df.columns else None
         elif res is not None:
             eq_data = res.get(key)
-        if eq_data is not None:
+        if eq_data is not None and len(eq_data) > 0 and eq_data.iloc[0] != 0:
+            eq_data = eq_data / eq_data.iloc[0] * STARTING_CAP
             fig.add_trace(go.Scatter(
                 x=eq_data.index, y=eq_data, mode="lines", name=name,
                 line=dict(color=color, width=width, dash=dash) if dash else dict(color=color, width=width),
