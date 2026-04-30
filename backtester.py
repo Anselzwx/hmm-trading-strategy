@@ -233,11 +233,11 @@ def compute_indicators(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     bb_low   = bb_width.rolling(120, min_periods=30).quantile(0.30)
     sw3 = (bb_width <= bb_low).astype(int)
 
-    # 4. Breakout failure：突破20日高点后5bars内收益 <= 0
+    # 4. Breakout failure：突破20日高点，但过去5bars收益 <= 0（用历史数据，不看未来）
     roll_high_20 = c.rolling(20).max().shift(1)
     breakout     = (c > roll_high_20)
-    fwd_ret_5    = c.shift(-5) / c - 1
-    sw4 = (breakout & (fwd_ret_5 <= 0)).astype(int).rolling(10, min_periods=1).max()
+    past_ret_5   = c / c.shift(5) - 1
+    sw4 = (breakout & (past_ret_5 <= 0)).astype(int).rolling(10, min_periods=1).max()
 
     out["sideways_score"] = (sw1 + sw2 + sw3 + sw4).clip(0, 4)
 
@@ -557,10 +557,10 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     p        = TICKER_PARAMS.get(ticker, {"n_states": N_STATES, "bull_top": 2,
                                           "min_conf": MIN_CONFIRMATIONS,
                                           "stop": STOP_LOSS_PCT, "hold_mult": 1.0})
-    n_states = p["n_states"]
-    bull_top = p["bull_top"]
-    min_conf = p["min_conf"]
-    stop     = p["stop"]
+    n_states  = p["n_states"]
+    bull_top  = p["bull_top"]
+    min_conf  = p["min_conf"]
+    stop      = p["stop"]
     hold_mult = p["hold_mult"]
 
     features = get_hmm_features(df)
