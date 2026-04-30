@@ -1239,7 +1239,34 @@ def render_asset(ticker: str) -> None:
 
     # ── 资金曲线 + 回撤 ──────────────────────────────────────
     st.markdown('<div class="section-header">💰 资金曲线 vs 买入持有 vs SPY</div>', unsafe_allow_html=True)
-    st.plotly_chart(equity_chart(df, res), use_container_width=True)
+
+    _date_min = df.index.min().date()
+    _date_max = df.index.max().date()
+    _col_l, _col_r = st.columns(2, gap="small")
+    with _col_l:
+        _start = st.date_input("起始日期", value=_date_min,
+                               min_value=_date_min, max_value=_date_max,
+                               key=f"eq_start_{ticker}")
+    with _col_r:
+        _end = st.date_input("结束日期", value=_date_max,
+                             min_value=_date_min, max_value=_date_max,
+                             key=f"eq_end_{ticker}")
+
+    if _start >= _end:
+        st.warning("起始日期必须早于结束日期")
+        _df_eq = df
+        _res_eq = res
+    else:
+        import datetime as _dt
+        _mask = (df.index.date >= _start) & (df.index.date <= _end)
+        _df_eq = df[_mask].copy()
+        # 重新基准化 equity（让曲线从选定起点的值开始）
+        _res_eq = dict(res)
+        for _k in ["equity_b", "equity_c", "equity_d"]:
+            if _k in res and res[_k] is not None:
+                _res_eq[_k] = res[_k][_mask]
+
+    st.plotly_chart(equity_chart(_df_eq, _res_eq), use_container_width=True)
 
     # ── 滚动夏普 ─────────────────────────────────────────────
     st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
