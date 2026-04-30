@@ -1257,14 +1257,14 @@ def render_asset(ticker: str) -> None:
         _df_eq = df
         _res_eq = res
     else:
-        import datetime as _dt
-        _mask = (df.index.date >= _start) & (df.index.date <= _end)
-        _df_eq = df[_mask].copy()
-        # 重新基准化 equity（让曲线从选定起点的值开始）
+        import pandas as _pd
+        _s, _e = str(_start), str(_end)
+        _df_eq = df.loc[_s:_e].copy()
         _res_eq = dict(res)
         for _k in ["equity_b", "equity_c", "equity_d"]:
-            if _k in res and res[_k] is not None:
-                _res_eq[_k] = res[_k][_mask]
+            _v = res.get(_k)
+            if _v is not None and isinstance(_v, _pd.Series):
+                _res_eq[_k] = _v.loc[_s:_e]
 
     st.plotly_chart(equity_chart(_df_eq, _res_eq), use_container_width=True)
 
