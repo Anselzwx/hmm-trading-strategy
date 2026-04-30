@@ -283,29 +283,44 @@ def _walk_forward_states(features: np.ndarray,
                           n_total: int,
                           n_states: int = N_STATES,
                           train_ratio: float = WF_TRAIN_RATIO,
-                          step_ratio:  float = WF_STEP_RATIO) -> np.ndarray:
+                          step_ratio:  float = WF_STEP_RATIO,
+                          bull_top: int = 2) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Returns (state_seq, is_bull, is_bear) — all derived purely from past data.
+    bull/bear labels are determined per window using that window's model means,
+    eliminating look-ahead bias from full-sample identify_states().
+    """
     min_train  = max(n_states * 20, 60)
     train_size = max(int(n_total * train_ratio), min_train)
     train_size = min(train_size, n_total - 1)
     step_size  = max(int(n_total * step_ratio), 1)
     state_seq  = np.full(n_total, -1, dtype=int)
+    is_bull    = np.zeros(n_total, dtype=bool)
+    is_bear    = np.zeros(n_total, dtype=bool)
+
+    def _apply(model, start, end):
+        preds = model.predict(features[start:end])
+        mr    = model.means_[:, 0]
+        ranked = np.argsort(mr)[::-1]
+        bull_set = set(ranked[:bull_top].tolist())
+        bear_s   = int(ranked[-1])
+        # remap to sorted-by-mean order for regime_label consistency
+        rmap = {old: new for new, old in enumerate(np.argsort(mr))}
+        state_seq[start:end] = [rmap[p] for p in preds]
+        is_bull[start:end]   = [p in bull_set for p in preds]
+        is_bear[start:end]   = [p == bear_s   for p in preds]
 
     base_model = fit_hmm(features[:train_size], n_states)
-    mr0   = base_model.means_[:, 0]
-    rmap0 = {old: new for new, old in enumerate(np.argsort(mr0))}
-    state_seq[:train_size] = [rmap0[p] for p in base_model.predict(features[:train_size])]
+    _apply(base_model, 0, train_size)
 
     cursor = train_size
     while cursor < n_total:
         end   = min(cursor + step_size, n_total)
         model = fit_hmm(features[:cursor], n_states)
-        preds = model.predict(features[cursor:end])
-        mr    = model.means_[:, 0]
-        remap = {old: new for new, old in enumerate(np.argsort(mr))}
-        state_seq[cursor:end] = [remap[p] for p in preds]
+        _apply(model, cursor, end)
         cursor = end
 
-    return state_seq
+    return state_seq, is_bull, is_bear
 
 
 # ============================================================
@@ -551,12 +566,13 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     features = get_hmm_features(df)
     n        = len(features)
 
-    wf_states = _walk_forward_states(features, n, n_states)
+    wf_states, is_bull_arr, is_bear_arr = _walk_forward_states(
+        features, n, n_states, bull_top=bull_top)
 
     df = df.copy()
     df["state"]   = wf_states
-    df["is_bull"] = df["state"] >= (n_states - bull_top)
-    df["is_bear"] = df["state"] == 0
+    df["is_bull"] = is_bull_arr
+    df["is_bear"] = is_bear_arr
 
     def _label(s: int) -> str:
         if s == n_states - 1: return "Bull Run"
@@ -583,11 +599,11 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
 
     metrics = _compute_metrics(df, trades, ticker, is_daily)
 
+    # 全量模型仅用于展示后验概率（不参与交易决策）
     full_model              = fit_hmm(features, n_states)
     bull_states, bear_state = identify_states(full_model, bull_top)
     regime_labels           = {s: _label(s) for s in range(n_states)}
 
-    # HMM 后验概率（最新 bar）
     try:
         posterior = full_model.predict_proba(features[-1:]).flatten().tolist()
     except Exception:

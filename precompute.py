@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 from data_loader import fetch_data
 from backtester  import run_backtest
 
-TICKERS   = ["AAPL", "GC=F", "SI=F"]
+TICKERS   = ["AAPL", "GC=F", "SI=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR"]
 OUT_DIR   = os.path.join(os.path.dirname(__file__), "results")
 
 
