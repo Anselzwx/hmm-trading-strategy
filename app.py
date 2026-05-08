@@ -998,20 +998,9 @@ def render_asset(ticker: str) -> None:
     df       = res["df"]
     is_daily = res.get("is_daily", True)
 
-    # 选最优策略（Sharpe 最高）
-    all_strategies = {
-        "A · HMM信号投票":  (res["metrics"],   res["trades"]),
-        "B · Trailing Stop": (res.get("metrics_b", {}), res.get("trades_b", [])),
-        "C · EMA趋势跟踪":  (res.get("metrics_c", {}), res.get("trades_c", [])),
-        "D · HMM+布林带":   (res.get("metrics_d", {}), res.get("trades_d", [])),
-    }
-    best_name = max(all_strategies, key=lambda k: all_strategies[k][0].get("sharpe", -999))
-    metrics, trades = all_strategies[best_name]
-    st.caption(f"📊 最优策略：**策略{best_name}**（Sharpe {metrics.get('sharpe',0):.2f}）")
-
-    # Merge with v1 metrics as fallback so all UI metric keys are always present
-    _base_metrics = res["metrics"]
-    metrics = {**_base_metrics, **metrics}
+    best_name = "A · HMM信号投票"
+    metrics, trades = res["metrics"], res["trades"]
+    st.caption(f"📊 策略：**策略{best_name}**（Sharpe {metrics.get('sharpe',0):.2f}）")
 
     last     = df.iloc[-1]
     n_states   = res.get("n_states",   N_STATES)
