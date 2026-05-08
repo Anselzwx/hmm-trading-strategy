@@ -29,8 +29,8 @@ warnings.filterwarnings("ignore")
 N_STATES          = 7
 LEVERAGE          = 1.0
 STARTING_CAP      = 10_000.0
-MIN_CONFIRMATIONS = 9
-TOTAL_SIGNALS     = 14
+MIN_CONFIRMATIONS = 4       # 精简为4个核心信号
+TOTAL_SIGNALS     = 4       # 精简信号总数
 RANDOM_SEED       = 42
 STOP_LOSS_PCT     = -0.08
 
@@ -39,9 +39,18 @@ COOLDOWN_DAILY  = 2
 MAX_HOLD_HOURLY = 24 * 30
 MAX_HOLD_DAILY  = 60
 
-# 摩擦成本（统一百分比模型）
-# slippage=0.05% per side + commission=0.05% per side = 0.10% per side, 0.20% round trip
-FRICTION_PCT    = 0.001   # 0.10% per side; set to 0.0 to disable
+# 摩擦成本（分资产类型）
+# 期货：滑点+手续费 0.05%/side；股票：0.02%/side
+FRICTION_FUTURES = 0.0005   # GC=F / SI=F
+FRICTION_EQUITY  = 0.0002   # 股票 ETF
+FRICTION_PCT     = 0.0002   # 默认（向后兼容）
+
+# 做空开关（Bear 状态反手做空）
+ENABLE_SHORT     = True
+SHORT_SIZE_PCT   = 0.3      # 空仓仓位固定30%（保守）
+SHORT_STOP_PCT   = 0.10     # 空仓止损10%（放宽，避免频繁止损）
+SHORT_CONFIRM    = 3        # 连续N根Bear才开空（降低假信号）
+SHORT_MIN_HOLD   = 5        # 开空后至少持仓N根才允许Regime Cover
 
 # 保证金参数（分资产）
 # initial_margin: 开仓所需保证金率（相对 notional）
@@ -62,24 +71,19 @@ WF_STEP_RATIO   = 0.1
 # stop:     止损比例
 # hold_mult: 最大持仓倍数（相对全局MAX_HOLD）
 TICKER_PARAMS: Dict[str, Dict] = {
-    # AAPL_A2_final: hold_mult=1.25 (75bars), subsample validated 2026-04-21
-    "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.25, "adx_entry": 25, "regime_reduce": False},
-    # Gold_regime_reduce50_final: Regime→reduce50%, price-type stop, validated 2026-04-21
-    "GC=F": {"n_states": 7, "bull_top": 2, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 25, "regime_reduce": True},
-    # Silver_VT1_final: ADX>30, Regime→reduce50%, vol-targeting (rvol median, clip[0.3,1.5]), validated 2026-04-22
-    "SI=F": {"n_states": 7, "bull_top": 1, "min_conf": 9,  "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 30, "regime_reduce": True, "vol_target": True},
-    # NVDA: 高波动成长股，5状态，止损-8%，ADX>25
-    "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 9,  "stop": -0.08, "hold_mult": 1.25, "adx_entry": 25, "regime_reduce": False},
-    # META: 成长股，5状态，止损-8%，ADX>20，min_conf降低提高频率
-    "META": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "AMZN": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "GOOG": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "MSFT": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "TSLA": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 25, "regime_reduce": False},
-    "HOOD": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "SPY":  {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "FXI":  {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "PLTR": {"n_states": 5, "bull_top": 3, "min_conf": 8,  "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 25, "regime_reduce": False},
+    "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.06, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
+    "GC=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
+    "SI=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
+    "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
+    "META": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "AMZN": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "GOOG": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "MSFT": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "TSLA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "HOOD": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "SPY":  {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "FXI":  {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "PLTR": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
 }
 
 # Regime exit 连续确认 bars（1=原版，2=Gold 定案）
@@ -249,28 +253,30 @@ def compute_indicators(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
 # ============================================================
 
 def compute_signals(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
-    c1  = df["rsi"]          < 90
-    c2  = df["momentum"]     > 1.0
-    c3  = df["volatility"]   < 6.0
-    c4  = df["Volume"]       > df["vol_sma20"]
-    c5  = df["adx"]          > 25
-    c6  = df["Close"]        > df["ema50"]
-    c7  = df["Close"]        > df["ema200"]
-    c8  = df["macd_line"]    > df["macd_signal"]
-    c9  = df["Close"]        > df["bb_mid"]
-    c10 = (df["stoch_k"]     > df["stoch_d"]) & (df["stoch_k"] < 80)
-    c11 = df["williams_r"]   < -20
-    c12 = df["cci"]          > 0
-    c13 = df["obv"]          > df["obv_ema"]
-    c14 = df["pct_from_high"] > -30
+    """
+    精简为4个统计显著的核心信号：
+    1. 趋势：EMA50 > EMA200（大趋势方向）
+    2. 动量：MACD线 > MACD信号线（短期动量确认）
+    3. 强度：ADX > 20（趋势强度，排除横盘）
+    4. 超买过滤：RSI < 75（避免追高入场）
+    """
+    c1 = (df["Close"]     > df["ema200"])                              # 价格在200日均线上方
+    c2 = (df["ema50"]     > df["ema200"])                              # 趋势：均线多头排列
+    c3 = (df["macd_line"] > df["macd_signal"])                         # 动量：MACD金叉
+    c4 = (df["adx"]       > 20)                                        # 强度：ADX过滤横盘
+    c5 = (df["rsi"]       < 75)                                        # 过滤：避免超买追高
 
-    score = sum(x.astype(int) for x in [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14])
-    return score >= MIN_CONFIRMATIONS, score
+    # c1+c2 是必要条件；c3/c4 贡献动量/强度得分；c5 是过滤器不计分
+    score = (c1.astype(int) + c2.astype(int) +
+             c3.astype(int) + c4.astype(int))
+    signal = (score >= MIN_CONFIRMATIONS) & c5
+    return signal, score
 
 
 def _position_size(score: float, min_conf: int = MIN_CONFIRMATIONS) -> float:
+    """信号强度线性映射仓位：4分→60%，全满→90%"""
     min_s, max_s = min_conf, TOTAL_SIGNALS
-    min_sz, max_sz = 0.40, 1.00
+    min_sz, max_sz = 0.60, 0.90
     ratio = (score - min_s) / max(max_s - min_s, 1)
     return float(np.clip(min_sz + ratio * (max_sz - min_sz), min_sz, max_sz))
 
@@ -347,37 +353,41 @@ def _simulate(df: pd.DataFrame,
     max_hold          = int((MAX_HOLD_DAILY if is_daily else MAX_HOLD_HOURLY) * hold_mult)
     bear_confirm      = BEAR_CONFIRM.get(ticker, 1)
     tp                = TICKER_PARAMS.get(ticker, {})
-    friction_pct      = FRICTION_PCT
+    # 分资产摩擦成本
+    friction_pct      = FRICTION_FUTURES if ticker in ("GC=F", "SI=F") else FRICTION_EQUITY
     mp                = MARGIN_PARAMS.get(ticker, {"initial_margin": 0.40, "maintenance_margin": 0.25})
     initial_margin    = mp["initial_margin"]
     maint_margin      = mp["maintenance_margin"]
-    use_regime_reduce = tp.get("regime_reduce", False)   # Gold + Silver: reduce path
+    use_regime_reduce = tp.get("regime_reduce", False)
     adx_entry         = tp.get("adx_entry", 25)
-    use_vol_target    = tp.get("vol_target", False)       # Silver: rvol-based position scaling
-    VT_MIN, VT_MAX    = 0.3, 1.5
+    # 波动率归一化仓位：全局启用
+    use_vol_target    = True
+    VT_MIN, VT_MAX    = 0.5, 1.5
 
     capital       = STARTING_CAP
     position      = 0.0
     pos_size_pct  = 0.0
     entry_price   = 0.0
-    stop_price    = 0.0   # price-type stop: fixed at entry, unaffected by partial reduces
+    stop_price    = 0.0
     entry_time    = None
     cooldown_left = 0
     hold_bars     = 0
     in_trade      = False
+    is_short      = False   # 当前持仓方向（True=空仓）
     equity_curve  = []
     trades        = []
 
     consec_stops            = 0
     after_stopout           = False
     bear_consec             = 0
-    regime_reduce_triggered = False   # Lock A: one Regime Reduce per holding cycle
-    realised_from_reduce    = 0.0    # PnL already booked from partial reduces
-    reduce_time             = None   # bar when reduce was triggered
-    reduce_price            = None   # price at reduce trigger
+    bear_pre_consec         = 0   # 空仓时的连续Bear计数（用于SHORT_CONFIRM）
+    regime_reduce_triggered = False
+    realised_from_reduce    = 0.0
+    reduce_time             = None
+    reduce_price            = None
 
-    # vol-targeting: target = full-sample rvol median (Silver only)
-    vt_target = float(df["vol_volatility"].dropna().median()) if use_vol_target else None
+    # 波动率归一化：用历史中位数作为目标波动率
+    vt_target = float(df["vol_volatility"].dropna().median())
     vt_scale  = 1.0
 
     for ts, row in df.iterrows():
@@ -392,141 +402,214 @@ def _simulate(df: pd.DataFrame,
         else:
             eff_min_conf = min_conf + 2; pos_scale = 0.50
 
-        entry_min_conf = eff_min_conf + (2 if after_stopout else 0)
+        entry_min_conf = min(eff_min_conf + (1 if after_stopout else 0), TOTAL_SIGNALS)
 
         # ── 持仓管理 ─────────────────────────────────────────
         if in_trade:
             hold_bars   += 1
-            current_ret  = (price - entry_price) / entry_price
 
-            if row["is_bear"]:
+            if row.get("is_bear", False):
                 bear_consec += 1
             else:
                 bear_consec = 0
 
-            reduce_reason = None
-            exit_reason   = None
+            exit_reason = None
 
-            # 层次 2：Maintenance Margin 检查（优先级最高，强平）
-            # account equity = capital + unrealised_pnl
-            # notional exposure = position × price × LEVERAGE
-            notional        = position * price * LEVERAGE
-            unrealised_pnl  = (price - entry_price) * position * LEVERAGE
-            account_equity  = capital + unrealised_pnl
-            if notional > 0 and account_equity < maint_margin * notional:
-                exit_reason = "MarginCall"
-
-            if use_regime_reduce:
-                # Gold_regime_reduce50_final / Silver_S-R1_provisional:
-                # Regime → reduce to 50% once (Lock A); full exit only by price-type Stop/MaxHold
-                if bear_consec >= bear_confirm and not regime_reduce_triggered:
-                    old_pos          = position
-                    new_pos          = position * 0.50
-                    reduce_price_net = price * (1 - friction_pct)
-                    released         = (old_pos - new_pos) * reduce_price_net
-                    realised         = (reduce_price_net - entry_price) * (old_pos - new_pos) * LEVERAGE
-                    capital         += released + realised
-                    position     = new_pos
-                    realised_from_reduce    += realised
-                    regime_reduce_triggered  = True
-                    reduce_time              = ts
-                    reduce_price             = price
-
-                # price-type stop: compare current price to fixed stop_price
-                if price <= stop_price:
-                    exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
+            # ── 空头平仓逻辑 ──────────────────────────────────
+            if is_short:
+                short_ret = (entry_price - price) / entry_price  # 空头收益：价跌为正
+                notional       = position * price * LEVERAGE
+                unrealised_pnl = (entry_price - price) * position * LEVERAGE
+                account_equity = capital + unrealised_pnl
+                if notional > 0 and account_equity < maint_margin * notional:
+                    exit_reason = "MarginCall"
+                elif price >= stop_price:
+                    exit_reason = f"Short StopLoss (+{SHORT_STOP_PCT*100:.0f}%)"
+                elif (not row.get("is_bear", False) and row.get("is_bull", False)
+                      and hold_bars >= SHORT_MIN_HOLD):
+                    exit_reason = "Regime → Bull (cover)"
                 elif hold_bars >= max_hold:
                     exit_reason = f"MaxHold ({max_hold} bars)"
+
+                if exit_reason:
+                    exit_price_net = price * (1 + friction_pct)
+                    pnl = (entry_price - exit_price_net) * position * LEVERAGE
+                    capital += pnl
+                    trades.append({
+                        "entry_time":   entry_time, "exit_time": ts,
+                        "entry_price":  entry_price, "exit_price": price,
+                        "pnl":          pnl, "pos_size_pct": pos_size_pct,
+                        "exit_reason":  exit_reason, "reduce_reason": "N/A",
+                        "reduce_time":  None, "reduce_price": None,
+                        "hold_bars":    hold_bars,
+                        "return_pct":   short_ret * 100 * LEVERAGE,
+                        "sideways_score": sw_score,
+                        "regime_reduce_triggered": False, "vt_scale": vt_scale,
+                        "direction":    "short",
+                    })
+                    position = 0.0; in_trade = False; is_short = False
+                    hold_bars = 0; bear_consec = 0
+                    cooldown_left = 0  # 空头平仓后立即可以开多头
+
+            # ── 多头平仓逻辑 ──────────────────────────────────
             else:
-                # AAPL and others: original Regime full exit + return-type stop
-                if bear_consec >= bear_confirm:
-                    exit_reason = "Regime → Bear/Crash"
-                elif current_ret <= stop_loss_pct:
-                    exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
-                elif hold_bars >= max_hold:
-                    exit_reason = f"MaxHold ({max_hold} bars)"
+                current_ret = (price - entry_price) / entry_price
+                notional        = position * price * LEVERAGE
+                unrealised_pnl  = (price - entry_price) * position * LEVERAGE
+                account_equity  = capital + unrealised_pnl
+                if notional > 0 and account_equity < maint_margin * notional:
+                    exit_reason = "MarginCall"
 
-            if exit_reason:
-                exit_price_net = price * (1 - friction_pct)    # pay slippage+commission on exit
-                pnl_remaining = (exit_price_net - entry_price) * position * LEVERAGE
-                capital      += pnl_remaining
-                total_pnl     = realised_from_reduce + pnl_remaining
-                is_stop       = ("StopLoss" in exit_reason) or (exit_reason == "MarginCall")
-                trades.append({
-                    "entry_time":              entry_time,
-                    "exit_time":               ts,
-                    "entry_price":             entry_price,
-                    "exit_price":              price,
-                    "pnl":                     total_pnl,
-                    "pos_size_pct":            pos_size_pct,
-                    "exit_reason":             exit_reason,
-                    "reduce_reason":           "RegimeReduce50" if regime_reduce_triggered else "N/A",
-                    "reduce_time":             reduce_time,
-                    "reduce_price":            reduce_price,
-                    "hold_bars":               hold_bars,
-                    "return_pct":              (exit_price_net / entry_price - 1) * 100 * LEVERAGE,
-                    "sideways_score":          sw_score,
-                    "regime_reduce_triggered": regime_reduce_triggered,
-                    "vt_scale":                vt_scale,
-                })
-                position, in_trade, hold_bars  = 0.0, False, 0
-                bear_consec                    = 0
-                regime_reduce_triggered        = False
-                realised_from_reduce           = 0.0
-                reduce_time                    = None
-                reduce_price                   = None
-                if is_stop:
-                    consec_stops += 1; after_stopout = True
-                    cooldown_left = _sideways_cooldown(base_cd, sw_score, consec_stops)
+                if use_regime_reduce:
+                    if bear_consec >= bear_confirm and not regime_reduce_triggered:
+                        old_pos          = position
+                        new_pos          = position * 0.50
+                        reduce_price_net = price * (1 - friction_pct)
+                        released         = (old_pos - new_pos) * reduce_price_net
+                        realised         = (reduce_price_net - entry_price) * (old_pos - new_pos) * LEVERAGE
+                        capital         += released + realised
+                        position                 = new_pos
+                        realised_from_reduce    += realised
+                        regime_reduce_triggered  = True
+                        reduce_time              = ts
+                        reduce_price             = price
+                    if not exit_reason:
+                        if price <= stop_price:
+                            exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
+                        elif hold_bars >= max_hold:
+                            exit_reason = f"MaxHold ({max_hold} bars)"
                 else:
-                    consec_stops = 0; after_stopout = False
-                    cooldown_left = base_cd
+                    if not exit_reason:
+                        if bear_consec >= bear_confirm:
+                            exit_reason = "Regime → Bear/Crash"
+                        elif current_ret <= stop_loss_pct:
+                            exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
+                        elif hold_bars >= max_hold:
+                            exit_reason = f"MaxHold ({max_hold} bars)"
+
+                if exit_reason:
+                    exit_price_net = price * (1 - friction_pct)
+                    pnl_remaining  = (exit_price_net - entry_price) * position * LEVERAGE
+                    capital       += pnl_remaining
+                    total_pnl      = realised_from_reduce + pnl_remaining
+                    is_stop        = ("StopLoss" in exit_reason) or (exit_reason == "MarginCall")
+                    trades.append({
+                        "entry_time":              entry_time,
+                        "exit_time":               ts,
+                        "entry_price":             entry_price,
+                        "exit_price":              price,
+                        "pnl":                     total_pnl,
+                        "pos_size_pct":            pos_size_pct,
+                        "exit_reason":             exit_reason,
+                        "reduce_reason":           "RegimeReduce50" if regime_reduce_triggered else "N/A",
+                        "reduce_time":             reduce_time,
+                        "reduce_price":            reduce_price,
+                        "hold_bars":               hold_bars,
+                        "return_pct":              (exit_price_net / entry_price - 1) * 100 * LEVERAGE,
+                        "sideways_score":          sw_score,
+                        "regime_reduce_triggered": regime_reduce_triggered,
+                        "vt_scale":                vt_scale,
+                        "direction":               "long",
+                    })
+                    position, in_trade, hold_bars  = 0.0, False, 0
+                    bear_consec                    = 0
+                    regime_reduce_triggered        = False
+                    realised_from_reduce           = 0.0
+                    reduce_time                    = None
+                    reduce_price                   = None
+                    if is_stop:
+                        consec_stops += 1; after_stopout = True
+                        cooldown_left = _sideways_cooldown(base_cd, sw_score, consec_stops)
+                    else:
+                        consec_stops = 0; after_stopout = False
+                        cooldown_left = base_cd
 
         if cooldown_left > 0:
             cooldown_left -= 1
 
-        # ── 开仓判断 ─────────────────────────────────────────
+        # ── 多头开仓 ─────────────────────────────────────────
         if (not in_trade and cooldown_left == 0
                 and row["is_bull"]
                 and row["signal_score"] >= entry_min_conf
                 and float(row["adx"]) > adx_entry):
             score        = float(row["signal_score"])
             base_pct     = _position_size(score, eff_min_conf) * pos_scale
-            if use_vol_target and vt_target:
-                entry_rvol   = float(row.get("vol_volatility", vt_target))
-                vt_scale     = float(np.clip(vt_target / entry_rvol, VT_MIN, VT_MAX)) if entry_rvol > 0 else 1.0
-            else:
-                vt_scale     = 1.0
+            # 波动率归一化仓位：高波动期自动缩仓
+            entry_rvol   = float(row.get("vol_volatility", vt_target))
+            vt_scale     = float(np.clip(vt_target / entry_rvol, VT_MIN, VT_MAX)) if entry_rvol > 0 else 1.0
             pos_size_pct = base_pct * vt_scale
-
-            # 层次 1：Initial Margin 约束
-            # notional = capital × pos_size_pct × LEVERAGE
-            # 所需保证金 = notional × initial_margin ≤ capital（可用资金）
-            # 若超出，缩减 pos_size_pct 使保证金恰好等于 capital
-            max_pos_by_margin = 1.0 / (LEVERAGE * initial_margin)  # pos_size_pct 上限
+            max_pos_by_margin = 1.0 / (LEVERAGE * initial_margin)
             pos_size_pct      = min(pos_size_pct, max_pos_by_margin)
 
             position     = capital * pos_size_pct / price
-            entry_price  = price * (1 + friction_pct)          # pay slippage+commission on entry
-            stop_price   = entry_price * (1 + stop_loss_pct)   # price-type stop, fixed
+            entry_price  = price * (1 + friction_pct)
+            stop_price   = entry_price * (1 + stop_loss_pct)
             entry_time   = ts
             in_trade     = True
+            is_short     = False
             hold_bars    = 0
             after_stopout           = False
             bear_consec             = 0
+            bear_pre_consec         = 0
             regime_reduce_triggered = False
             realised_from_reduce    = 0.0
             reduce_time             = None
             reduce_price            = None
 
-        mtm = capital + (price - entry_price) * position * LEVERAGE if in_trade else capital
+        # 更新空仓时的Bear连续计数（在多头开仓判断之后，确保已知是否in_trade）
+        if not in_trade:
+            if row.get("is_bear", False):
+                bear_pre_consec += 1
+            else:
+                bear_pre_consec = 0
+
+        # ── 空头开仓（Bear 状态 + 无仓位 + 做空开关）────────────
+        if (ENABLE_SHORT and not in_trade and cooldown_left == 0
+                and bear_pre_consec >= SHORT_CONFIRM
+                and float(row["adx"]) > adx_entry):
+            entry_rvol   = float(row.get("vol_volatility", vt_target))
+            vt_scale     = float(np.clip(vt_target / entry_rvol, VT_MIN, VT_MAX)) if entry_rvol > 0 else 1.0
+            pos_size_pct = SHORT_SIZE_PCT * vt_scale
+            max_pos_by_margin = 1.0 / (LEVERAGE * initial_margin)
+            pos_size_pct = min(pos_size_pct, max_pos_by_margin)
+
+            position     = capital * pos_size_pct / price
+            entry_price  = price * (1 - friction_pct)   # 做空入场：卖出收取
+            stop_price   = entry_price * (1 + SHORT_STOP_PCT)  # 空头止损：价格上涨触发
+            entry_time   = ts
+            in_trade     = True
+            is_short     = True
+            hold_bars    = 0
+            bear_consec  = 0
+            bear_pre_consec = 0
+            regime_reduce_triggered = False
+            realised_from_reduce    = 0.0
+            reduce_time  = None
+            reduce_price = None
+
+        # ── MTM 计算（多空方向不同）──────────────────────────────
+        if in_trade:
+            if is_short:
+                mtm = capital + (entry_price - price) * position * LEVERAGE
+            else:
+                mtm = capital + (price - entry_price) * position * LEVERAGE
+        else:
+            mtm = capital
         equity_curve.append(mtm)
 
     if in_trade:
-        last_price         = float(df["Close"].iloc[-1])
-        last_price_net     = last_price * (1 - friction_pct)
-        pnl_remaining      = (last_price_net - entry_price) * position * LEVERAGE
-        capital           += pnl_remaining
+        last_price = float(df["Close"].iloc[-1])
+        if is_short:
+            last_price_net = last_price * (1 + friction_pct)
+            pnl_remaining  = (entry_price - last_price_net) * position * LEVERAGE
+            ret_pct        = (entry_price - last_price) / entry_price * 100 * LEVERAGE
+            direction      = "short"
+        else:
+            last_price_net = last_price * (1 - friction_pct)
+            pnl_remaining  = (last_price_net - entry_price) * position * LEVERAGE
+            ret_pct        = (last_price - entry_price) / entry_price * 100 * LEVERAGE
+            direction      = "long"
+        capital += pnl_remaining
         trades.append({
             "entry_time":              entry_time,
             "exit_time":               df.index[-1],
@@ -539,10 +622,11 @@ def _simulate(df: pd.DataFrame,
             "reduce_time":             reduce_time,
             "reduce_price":            reduce_price,
             "hold_bars":               hold_bars,
-            "return_pct":              (last_price - entry_price) / entry_price * 100 * LEVERAGE,
+            "return_pct":              ret_pct,
             "sideways_score":          int(df["sideways_score"].iloc[-1]),
             "regime_reduce_triggered": regime_reduce_triggered,
             "vt_scale":                vt_scale,
+            "direction":               direction,
         })
 
     return equity_curve, trades

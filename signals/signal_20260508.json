@@ -1,0 +1,9 @@
+{
+  "generated_at": "2026-05-08T01:01:27.743503",
+  "signals": {},
+  "errors": {
+    "GC=F": "Length of values (3) does not match length of index (2696)",
+    "SI=F": "Length of values (3) does not match length of index (2696)",
+    "AAPL": "Length of values (3) does not match length of index (2598)"
+  }
+}

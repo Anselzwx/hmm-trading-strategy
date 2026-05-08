@@ -1,0 +1,93 @@
+  File "/opt/anaconda3/lib/python3.13/site-packages/joblib/externals/loky/backend/context.py", line 270, in _count_physical_cores
+    cpu_info = subprocess.run(
+        "sysctl -n hw.physicalcpu".split(),
+        capture_output=True,
+        text=True,
+    )
+  File "/opt/anaconda3/lib/python3.13/subprocess.py", line 554, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.13/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.13/subprocess.py", line 1972, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+Model is not converging.  Current: -9474.163743356748 is not greater than -9474.101634420786. Delta is -0.062108935962896794
+Model is not converging.  Current: -9474.1637433567 is not greater than -9474.101634420751. Delta is -0.06210893594834488
+Model is not converging.  Current: -13642.640312546455 is not greater than -13642.640312289372. Delta is -2.5708322937134653e-07
+
+[monitor] 2026-04-28 10:31 — starting
+
+=================================================================
+  HMM Daily Signal Report  —  2026-04-28 10:33
+=================================================================
+
+  GC=F    2026-04-27  Close=4692.5000
+  Regime: Neutral-3        State=3  bull_prob=0.0%  bear_prob=0.0%
+  Score:  5/14  (min=9)  ADX=18.1  (gate=25)  Sideways=2
+  Action if FLAT : 🔴 STAY_OUT
+  Action if LONG : 🟢 HOLD
+
+  SI=F    2026-04-27  Close=74.8450
+  Regime: Bull Run         State=2  bull_prob=0.0%  bear_prob=0.0%
+  Score:  4/14  (min=9)  ADX=23.0  (gate=30)  Sideways=2
+  Vol-target scale: 0.641
+  Action if FLAT : 🔴 STAY_OUT
+  Action if LONG : 🟢 HOLD
+
+  AAPL    2026-04-27  Close=267.6100
+  Regime: Bull Run         State=3  bull_prob=100.0%  bear_prob=0.0%
+  Score:  8/14  (min=9)  ADX=18.8  (gate=25)  Sideways=1
+  Action if FLAT : 🟡 WATCH
+  Action if LONG : 🟢 HOLD
+
+─────────────────────────────────────────────────────────────────
+  Output written → /Users/zhaowenxuan/Desktop/工作/HMM/signals/signal_20260428.json
+=================================================================
+
+[monitor] Email sent: [HMM] Daily Report — 2026-04-28 — No Alerts
+[monitor] Alerts: 0
+  No alerts.
+  File "/opt/anaconda3/lib/python3.13/site-packages/joblib/externals/loky/backend/context.py", line 270, in _count_physical_cores
+    cpu_info = subprocess.run(
+        "sysctl -n hw.physicalcpu".split(),
+        capture_output=True,
+        text=True,
+    )
+  File "/opt/anaconda3/lib/python3.13/subprocess.py", line 554, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.13/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/lib/python3.13/subprocess.py", line 1972, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+Model is not converging.  Current: -13583.593903255125 is not greater than -13583.593021760706. Delta is -0.0008814944194455165
+
+[monitor] 2026-05-08 01:00 — starting
+
+=================================================================
+  HMM Daily Signal Report  —  2026-05-08 01:01
+=================================================================
+
+  ERRORS: {'GC=F': 'Length of values (3) does not match length of index (2696)', 'SI=F': 'Length of values (3) does not match length of index (2696)', 'AAPL': 'Length of values (3) does not match length of index (2598)'}
+
+─────────────────────────────────────────────────────────────────
+  Output written → /Users/zhaowenxuan/Desktop/工作/HMM/signals/signal_20260508.json
+=================================================================
+
+[monitor] Email sent: [HMM] ERROR — 2026-05-08

@@ -21,7 +21,7 @@ import pandas as pd
 CACHE_DIR       = os.path.dirname(__file__)
 CACHE_TTL_HOURS = 1
 FMP_API_KEY     = "1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p"
-FMP_START       = "2016-01-01"
+FMP_START       = "2008-01-01"
 FMP_BASE        = "https://financialmodelingprep.com/stable/historical-price-eod/full"
 
 MACRO_DB = os.environ.get(
