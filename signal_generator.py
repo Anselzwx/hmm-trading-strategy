@@ -90,21 +90,20 @@ def generate_signal(ticker: str) -> Dict:
     features = get_hmm_features(df)
     n        = len(features)
 
-    # walk-forward states（与回测一致）
-    wf_states = _walk_forward_states(features, n, n_states)
+    # walk-forward states（与回测一致，返回三元组）
+    wf_states, is_bull_arr, is_bear_arr = _walk_forward_states(
+        features, n, n_states, bull_top=bull_top)
 
-    # 全样本 fit 用于 posterior 概率、state 标签、今日 is_bull/is_bear
+    # 全样本 fit 仅用于 posterior 概率和 regime 标签展示（不参与交易决策）
     full_model              = fit_hmm(features, n_states)
     bull_states, bear_state = identify_states(full_model, bull_top)
     regime_label_map        = _regime_labels_by_rank(full_model, n_states)
-
-    # 用 full_model predict 对齐 state 语义（wf_states 编号与 full_model 不保证对齐）
-    full_states = full_model.predict(features)
+    full_states             = full_model.predict(features)
 
     df = df.copy()
-    df["state"]   = wf_states          # walk-forward states（与回测一致）
-    df["is_bull"] = pd.Series(full_states, index=df.index).isin(bull_states)
-    df["is_bear"] = pd.Series(full_states, index=df.index) == bear_state
+    df["state"]   = wf_states
+    df["is_bull"] = is_bull_arr   # walk-forward bull labels（与回测一致）
+    df["is_bear"] = is_bear_arr   # walk-forward bear labels（与回测一致）
 
     df = compute_indicators(df, ticker)
     _, score_series = compute_signals(df)
@@ -225,7 +224,7 @@ def run():
         print(f"\n  {ticker:6s}  {sig['date']}  Close={sig['close']:.4f}")
         print(f"  Regime: {sig['regime']:15s}  State={sig['state']}  "
               f"bull_prob={sig['bull_prob']:.1%}  bear_prob={sig['bear_prob']:.1%}")
-        print(f"  Score:  {sig['signal_score']}/{14}  (min={sig['min_conf']})  "
+        print(f"  Score:  {sig['signal_score']}/4  (min={sig['min_conf']})  "
               f"ADX={sig['adx']:.1f}  (gate={sig['adx_entry']})  "
               f"Sideways={sig['sideways_score']}")
         if sig["vt_scale"] is not None:

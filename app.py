@@ -1543,7 +1543,7 @@ def render_signals_tab() -> None:
                 f'<span style="color:#00e676">Bull {bull_bar}%</span> &nbsp;·&nbsp; '
                 f'<span style="color:#ff5252">Bear {bear_bar}%</span></div>'
                 '<div style="margin-top:6px;font-size:0.72rem;color:#64748b">'
-                f'Score <b style="color:{score_color}">{score}/14</b> &nbsp;'
+                f'Score <b style="color:{score_color}">{score}/4</b> &nbsp;'
                 f'ADX <b style="color:{adx_color}">{adx:.1f}</b> &nbsp;'
                 f'SW <b style="color:#64748b">{sw}/4</b>{vt_html}</div>'
                 f'{bars_html}'
