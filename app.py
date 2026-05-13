@@ -1186,26 +1186,37 @@ def render_asset(ticker: str) -> None:
 
     _preset_cols = st.columns(len(PRESETS), gap="small")
     _preset_key  = f"preset_{ticker}"
+    _start_key   = f"eq_start_{ticker}"
+    _end_key     = f"eq_end_{ticker}"
+
+    # 初始化 session_state
     if _preset_key not in st.session_state:
         st.session_state[_preset_key] = "全区间"
+    if _start_key not in st.session_state:
+        st.session_state[_start_key] = _date_min
+    if _end_key not in st.session_state:
+        st.session_state[_end_key] = _date_max
 
-    for i, (label, _) in enumerate(PRESETS.items()):
+    for i, (label, (ps, pe)) in enumerate(PRESETS.items()):
         with _preset_cols[i]:
             _active = st.session_state[_preset_key] == label
-            _btn_style = "primary" if _active else "secondary"
-            if st.button(label, key=f"preset_{ticker}_{label}", type=_btn_style, use_container_width=True):
+            if st.button(label, key=f"preset_{ticker}_{label}",
+                         type="primary" if _active else "secondary",
+                         use_container_width=True):
                 st.session_state[_preset_key] = label
+                st.session_state[_start_key]  = ps
+                st.session_state[_end_key]    = pe
+                st.rerun()
 
-    _ps, _pe = PRESETS[st.session_state[_preset_key]]
     _pcol_l, _pcol_r = st.columns(2, gap="small")
     with _pcol_l:
-        _start = st.date_input("起始日期", value=_ps,
+        _start = st.date_input("起始日期",
                                min_value=_date_min, max_value=_date_max,
-                               key=f"eq_start_{ticker}")
+                               key=_start_key)
     with _pcol_r:
-        _end = st.date_input("结束日期", value=_pe,
+        _end = st.date_input("结束日期",
                              min_value=_date_min, max_value=_date_max,
-                             key=f"eq_end_{ticker}")
+                             key=_end_key)
 
     if _start >= _end:
         st.warning("起始日期必须早于结束日期")
