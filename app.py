@@ -1167,6 +1167,63 @@ def render_asset(ticker: str) -> None:
     st.markdown('<div class="section-header">🔀 随机震荡指标 &amp; CCI</div>', unsafe_allow_html=True)
     st.plotly_chart(stoch_cci_chart(df), use_container_width=True)
 
+    # ── 时间段选择器（预设 + 自定义）────────────────────────────
+    st.markdown('<div class="section-header">📅 回测区间</div>', unsafe_allow_html=True)
+
+    _date_min = df.index.min().date()
+    _date_max = df.index.max().date()
+
+    PRESETS = {
+        "全区间":       (_date_min,                            _date_max),
+        "2008金融危机": (max(_date_min, __import__('datetime').date(2008,1,1)),  __import__('datetime').date(2009,6,30)),
+        "2010-2015":   (max(_date_min, __import__('datetime').date(2010,1,1)),  __import__('datetime').date(2015,12,31)),
+        "2018熊市":    (max(_date_min, __import__('datetime').date(2018,1,1)),  __import__('datetime').date(2018,12,31)),
+        "2020疫情":    (max(_date_min, __import__('datetime').date(2020,1,1)),  __import__('datetime').date(2020,12,31)),
+        "2022加息":    (max(_date_min, __import__('datetime').date(2022,1,1)),  __import__('datetime').date(2022,12,31)),
+        "近3年":       (max(_date_min, (_date_max.replace(year=_date_max.year-3))), _date_max),
+        "近1年":       (max(_date_min, (_date_max.replace(year=_date_max.year-1))), _date_max),
+    }
+
+    _preset_cols = st.columns(len(PRESETS), gap="small")
+    _preset_key  = f"preset_{ticker}"
+    if _preset_key not in st.session_state:
+        st.session_state[_preset_key] = "全区间"
+
+    for i, (label, _) in enumerate(PRESETS.items()):
+        with _preset_cols[i]:
+            _active = st.session_state[_preset_key] == label
+            _btn_style = "primary" if _active else "secondary"
+            if st.button(label, key=f"preset_{ticker}_{label}", type=_btn_style, use_container_width=True):
+                st.session_state[_preset_key] = label
+
+    _ps, _pe = PRESETS[st.session_state[_preset_key]]
+    _pcol_l, _pcol_r = st.columns(2, gap="small")
+    with _pcol_l:
+        _start = st.date_input("起始日期", value=_ps,
+                               min_value=_date_min, max_value=_date_max,
+                               key=f"eq_start_{ticker}")
+    with _pcol_r:
+        _end = st.date_input("结束日期", value=_pe,
+                             min_value=_date_min, max_value=_date_max,
+                             key=f"eq_end_{ticker}")
+
+    if _start >= _end:
+        st.warning("起始日期必须早于结束日期")
+        _df_slice = df
+    else:
+        _s, _e = str(_start), str(_end)
+        _df_slice = df.loc[_s:_e].copy()
+
+    # 用切片区间重算指标
+    from backtester import _compute_metrics as _cm
+    _trades_slice = [t for t in trades
+                     if t["entry_time"] >= _df_slice.index[0]
+                     and t["exit_time"]  <= _df_slice.index[-1]]
+    try:
+        metrics = _cm(_df_slice, _trades_slice, ticker, is_daily)
+    except Exception:
+        pass  # 切片太短时保留全区间指标
+
     # ── 绩效指标 Row 1 ────────────────────────────────────────
     st.markdown('<div class="section-header">📈 回测绩效</div>', unsafe_allow_html=True)
     cols = st.columns(4, gap="small")
@@ -1227,48 +1284,27 @@ def render_asset(ticker: str) -> None:
                                                          "峰值→修复所需时间", "yellow"), unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
-    # ── 资金曲线 + 回撤 ──────────────────────────────────────
+    # ── 资金曲线 + 回撤（使用已切片的 _df_slice）────────────────
     st.markdown('<div class="section-header">💰 资金曲线 vs 买入持有 vs SPY</div>', unsafe_allow_html=True)
-
-    _date_min = df.index.min().date()
-    _date_max = df.index.max().date()
-    _col_l, _col_r = st.columns(2, gap="small")
-    with _col_l:
-        _start = st.date_input("起始日期", value=_date_min,
-                               min_value=_date_min, max_value=_date_max,
-                               key=f"eq_start_{ticker}")
-    with _col_r:
-        _end = st.date_input("结束日期", value=_date_max,
-                             min_value=_date_min, max_value=_date_max,
-                             key=f"eq_end_{ticker}")
-
-    if _start >= _end:
-        st.warning("起始日期必须早于结束日期")
-        _df_eq = df
-        _res_eq = res
-    else:
-        import pandas as _pd
-        _s, _e = str(_start), str(_end)
-        _df_eq = df.loc[_s:_e].copy()
-        _res_eq = dict(res)
-        for _k in ["equity_b", "equity_c", "equity_d"]:
-            _v = res.get(_k)
-            if _v is not None and isinstance(_v, _pd.Series):
-                _res_eq[_k] = _v.loc[_s:_e]
-
-    st.plotly_chart(equity_chart(_df_eq, _res_eq), use_container_width=True)
+    _res_eq = dict(res)
+    _s, _e = str(_df_slice.index[0].date()), str(_df_slice.index[-1].date())
+    for _k in ["equity_b", "equity_c", "equity_d"]:
+        _v = res.get(_k)
+        if _v is not None and isinstance(_v, pd.Series):
+            _res_eq[_k] = _v.loc[_s:_e]
+    st.plotly_chart(equity_chart(_df_slice, _res_eq), use_container_width=True)
 
     # ── 滚动夏普 ─────────────────────────────────────────────
     st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
-    st.plotly_chart(rolling_sharpe_chart(df, is_daily), use_container_width=True)
+    st.plotly_chart(rolling_sharpe_chart(_df_slice, is_daily), use_container_width=True)
 
     # ── Relative Alpha Curve ──────────────────────────────────
     st.markdown('<div class="section-header">📐 相对 Alpha 曲线（策略净值 / B&H 净值）</div>', unsafe_allow_html=True)
-    st.plotly_chart(relative_alpha_chart(df), use_container_width=True)
+    st.plotly_chart(relative_alpha_chart(_df_slice), use_container_width=True)
 
     # ── Underwater Plot ───────────────────────────────────────
     st.markdown('<div class="section-header">🌊 Underwater 回撤曲线</div>', unsafe_allow_html=True)
-    st.plotly_chart(underwater_chart(df), use_container_width=True)
+    st.plotly_chart(underwater_chart(_df_slice), use_container_width=True)
 
     # ── 月度热力图（含 BH / Alpha 标签） + 状态分布 ──────────
     col_heat, col_dist = st.columns([3, 2], gap="medium")
@@ -1277,7 +1313,7 @@ def render_asset(ticker: str) -> None:
         monthly_heatmap_tabbed(metrics["monthly_df"])
     with col_dist:
         st.markdown('<div class="section-header">🧩 HMM 状态分布</div>', unsafe_allow_html=True)
-        st.plotly_chart(regime_bar(df), use_container_width=True)
+        st.plotly_chart(regime_bar(_df_slice), use_container_width=True)
 
     # ── 宏观特征可视化 ────────────────────────────────────────
     from data_loader import MACRO_TABLES
@@ -1290,12 +1326,12 @@ def render_asset(ticker: str) -> None:
 
     # ── 各状态收益箱线图 ─────────────────────────────────────
     st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
-    st.plotly_chart(regime_return_chart(df, n_states), use_container_width=True)
+    st.plotly_chart(regime_return_chart(_df_slice, n_states), use_container_width=True)
 
     # ── Regime Return Attribution ─────────────────────────────
-    if trades:
+    if _trades_slice:
         st.markdown('<div class="section-header">🔍 Regime 交易归因（各状态入场盈亏 & 胜率）</div>', unsafe_allow_html=True)
-        st.plotly_chart(regime_attribution_chart(df, trades), use_container_width=True)
+        st.plotly_chart(regime_attribution_chart(_df_slice, _trades_slice), use_container_width=True)
 
     # ── Exit Reason Breakdown ─────────────────────────────────
     exit_attr = metrics.get("exit_attribution", {})
