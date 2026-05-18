@@ -1756,11 +1756,11 @@ def render_portfolio_tab() -> None:
         x=all_idx, y=port_dyn, mode="lines", name="🟢 动态权重组合",
         line=dict(color="#00e676", width=2.5),
         fill="tozeroy", fillcolor="rgba(0,230,118,0.04)"))
-    fig_port.update_layout(
-        **_base_layout(height=420,
-                       legend=dict(orientation="h", y=1.06, x=0, font=dict(size=10))),
-        yaxis=dict(gridcolor=GRID_COLOR, tickprefix="$"),
-        xaxis=dict(gridcolor=GRID_COLOR))
+    _port_layout = _base_layout(height=420)
+    _port_layout["legend"] = dict(orientation="h", y=1.06, x=0, font=dict(size=10))
+    _port_layout["yaxis"] = dict(gridcolor=GRID_COLOR, tickprefix="$")
+    _port_layout["xaxis"] = dict(gridcolor=GRID_COLOR)
+    fig_port.update_layout(**_port_layout)
     st.plotly_chart(fig_port, use_container_width=True)
 
     # ── 各品种绩效表 ─────────────────────────────────────────
