@@ -34,10 +34,13 @@ TOTAL_SIGNALS     = 4       # 精简信号总数
 RANDOM_SEED       = 42
 STOP_LOSS_PCT     = -0.08
 
-COOLDOWN_HOURLY = 48
-COOLDOWN_DAILY  = 2
-MAX_HOLD_HOURLY = 24 * 30
-MAX_HOLD_DAILY  = 60
+COOLDOWN_HOURLY  = 48
+COOLDOWN_DAILY   = 2
+# MaxHold 已废弃，改为 ATR Trailing Stop，保留常量仅供向后兼容
+MAX_HOLD_HOURLY  = 24 * 30
+MAX_HOLD_DAILY   = 60
+ATR_TRAIL_MULT   = 3.0   # 多头：最高价 - N×ATR(14) 作为动态止损线
+SHORT_ATR_MULT   = 2.5   # 空头：最低价 + N×ATR(14)
 
 # 摩擦成本（分资产类型）
 # 期货：滑点+手续费 0.05%/side；股票：0.02%/side
@@ -374,6 +377,9 @@ def _simulate(df: pd.DataFrame,
     hold_bars     = 0
     in_trade      = False
     is_short      = False   # 当前持仓方向（True=空仓）
+    peak_price    = 0.0     # 持仓期间最高价（ATR trailing stop 用）
+    trough_price  = 0.0     # 空头持仓期间最低价
+    atr_trail_stop = 0.0    # 当前动态止损线
     equity_curve  = []
     trades        = []
 
@@ -407,6 +413,7 @@ def _simulate(df: pd.DataFrame,
         # ── 持仓管理 ─────────────────────────────────────────
         if in_trade:
             hold_bars   += 1
+            atr_val      = float(row.get("atr", price * 0.01))  # ATR fallback 1%
 
             if row.get("is_bear", False):
                 bear_consec += 1
@@ -417,19 +424,23 @@ def _simulate(df: pd.DataFrame,
 
             # ── 空头平仓逻辑 ──────────────────────────────────
             if is_short:
-                short_ret = (entry_price - price) / entry_price  # 空头收益：价跌为正
+                short_ret = (entry_price - price) / entry_price
+                # 更新最低价，ATR trailing stop 上移
+                if price < trough_price:
+                    trough_price   = price
+                    atr_trail_stop = trough_price + SHORT_ATR_MULT * atr_val
                 notional       = position * price * LEVERAGE
                 unrealised_pnl = (entry_price - price) * position * LEVERAGE
                 account_equity = capital + unrealised_pnl
                 if notional > 0 and account_equity < maint_margin * notional:
                     exit_reason = "MarginCall"
+                elif price >= atr_trail_stop and hold_bars >= SHORT_MIN_HOLD:
+                    exit_reason = f"Short ATR Trail Stop"
                 elif price >= stop_price:
                     exit_reason = f"Short StopLoss (+{SHORT_STOP_PCT*100:.0f}%)"
                 elif (not row.get("is_bear", False) and row.get("is_bull", False)
                       and hold_bars >= SHORT_MIN_HOLD):
                     exit_reason = "Regime → Bull (cover)"
-                elif hold_bars >= max_hold:
-                    exit_reason = f"MaxHold ({max_hold} bars)"
 
                 if exit_reason:
                     exit_price_net = price * (1 + friction_pct)
@@ -449,11 +460,16 @@ def _simulate(df: pd.DataFrame,
                     })
                     position = 0.0; in_trade = False; is_short = False
                     hold_bars = 0; bear_consec = 0
+                    trough_price = 0.0; atr_trail_stop = 0.0
                     cooldown_left = 0  # 空头平仓后立即可以开多头
 
             # ── 多头平仓逻辑 ──────────────────────────────────
             else:
                 current_ret = (price - entry_price) / entry_price
+                # 更新最高价，ATR trailing stop 下移
+                if price > peak_price:
+                    peak_price     = price
+                    atr_trail_stop = peak_price - ATR_TRAIL_MULT * atr_val
                 notional        = position * price * LEVERAGE
                 unrealised_pnl  = (price - entry_price) * position * LEVERAGE
                 account_equity  = capital + unrealised_pnl
@@ -476,16 +492,16 @@ def _simulate(df: pd.DataFrame,
                     if not exit_reason:
                         if price <= stop_price:
                             exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
-                        elif hold_bars >= max_hold:
-                            exit_reason = f"MaxHold ({max_hold} bars)"
+                        elif hold_bars >= 5 and price <= atr_trail_stop:
+                            exit_reason = f"ATR Trail Stop"
                 else:
                     if not exit_reason:
                         if bear_consec >= bear_confirm:
                             exit_reason = "Regime → Bear/Crash"
                         elif current_ret <= stop_loss_pct:
                             exit_reason = f"StopLoss ({stop_loss_pct*100:.0f}%)"
-                        elif hold_bars >= max_hold:
-                            exit_reason = f"MaxHold ({max_hold} bars)"
+                        elif hold_bars >= 5 and price <= atr_trail_stop:
+                            exit_reason = f"ATR Trail Stop"
 
                 if exit_reason:
                     exit_price_net = price * (1 - friction_pct)
@@ -513,6 +529,8 @@ def _simulate(df: pd.DataFrame,
                     })
                     position, in_trade, hold_bars  = 0.0, False, 0
                     bear_consec                    = 0
+                    peak_price                     = 0.0
+                    atr_trail_stop                 = 0.0
                     regime_reduce_triggered        = False
                     realised_from_reduce           = 0.0
                     reduce_time                    = None
@@ -541,9 +559,12 @@ def _simulate(df: pd.DataFrame,
             max_pos_by_margin = 1.0 / (LEVERAGE * initial_margin)
             pos_size_pct      = min(pos_size_pct, max_pos_by_margin)
 
+            atr_val      = float(row.get("atr", price * 0.01))
             position     = capital * pos_size_pct / price
             entry_price  = price * (1 + friction_pct)
             stop_price   = entry_price * (1 + stop_loss_pct)
+            peak_price   = price
+            atr_trail_stop = peak_price - ATR_TRAIL_MULT * atr_val
             entry_time   = ts
             in_trade     = True
             is_short     = False
@@ -563,19 +584,23 @@ def _simulate(df: pd.DataFrame,
             else:
                 bear_pre_consec = 0
 
-        # ── 空头开仓（Bear 状态 + 无仓位 + 做空开关）────────────
+        # ── 空头开仓（Bear 状态 + 无仓位 + EMA50跌破确认）──────
         if (ENABLE_SHORT and not in_trade and cooldown_left == 0
                 and bear_pre_consec >= SHORT_CONFIRM
-                and float(row["adx"]) > adx_entry):
+                and float(row["adx"]) > adx_entry
+                and float(row.get("Close", 0)) < float(row.get("ema50", float("inf")))):
             entry_rvol   = float(row.get("vol_volatility", vt_target))
             vt_scale     = float(np.clip(vt_target / entry_rvol, VT_MIN, VT_MAX)) if entry_rvol > 0 else 1.0
             pos_size_pct = SHORT_SIZE_PCT * vt_scale
             max_pos_by_margin = 1.0 / (LEVERAGE * initial_margin)
             pos_size_pct = min(pos_size_pct, max_pos_by_margin)
 
+            atr_val      = float(row.get("atr", price * 0.01))
             position     = capital * pos_size_pct / price
-            entry_price  = price * (1 - friction_pct)   # 做空入场：卖出收取
-            stop_price   = entry_price * (1 + SHORT_STOP_PCT)  # 空头止损：价格上涨触发
+            entry_price  = price * (1 - friction_pct)
+            stop_price   = entry_price * (1 + SHORT_STOP_PCT)
+            trough_price   = price
+            atr_trail_stop = trough_price + SHORT_ATR_MULT * atr_val
             entry_time   = ts
             in_trade     = True
             is_short     = True

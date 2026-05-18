@@ -998,9 +998,23 @@ def render_asset(ticker: str) -> None:
     df       = res["df"]
     is_daily = res.get("is_daily", True)
 
-    best_name = "A · HMM信号投票"
-    metrics, trades = res["metrics"], res["trades"]
-    st.caption(f"📊 策略：**策略{best_name}**（Sharpe {metrics.get('sharpe',0):.2f}）")
+    # 按 Calmar 选最优策略（总收益必须为正才参与评选）
+    _all_strats = {
+        "A · HMM信号投票":   (res["metrics"],              res["trades"]),
+        "B · Trailing Stop": (res.get("metrics_b") or {}, res.get("trades_b") or []),
+        "C · EMA趋势跟踪":   (res.get("metrics_c") or {}, res.get("trades_c") or []),
+        "D · HMM+布林带":    (res.get("metrics_d") or {}, res.get("trades_d") or []),
+    }
+    def _score(m):
+        if not m or m.get("total_return_pct", 0) <= 0:
+            return -999
+        return m.get("calmar", 0)
+    best_name = max(_all_strats, key=lambda k: _score(_all_strats[k][0]))
+    metrics, trades = _all_strats[best_name]
+    if not metrics:
+        metrics, trades = res["metrics"], res["trades"]
+        best_name = "A · HMM信号投票"
+    st.caption(f"📊 最优策略（Calmar最高）：**策略{best_name}**  Calmar {metrics.get('calmar',0):.2f}  Sharpe {metrics.get('sharpe',0):.2f}")
 
     last     = df.iloc[-1]
     n_states   = res.get("n_states",   N_STATES)
