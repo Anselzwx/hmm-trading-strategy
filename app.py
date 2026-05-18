@@ -1465,10 +1465,20 @@ def render_asset(ticker: str) -> None:
         ), unsafe_allow_html=True)
 
     # ── 完整交易记录（含筛选）────────────────────────────────
-    if trades:
+    _strat_base = ["A · HMM信号投票", "B · Trailing Stop", "C · EMA趋势跟踪", "D · HMM+布林带"]
+    _strat_data = [res["trades"], res.get("trades_b") or [], res.get("trades_c") or [], res.get("trades_d") or []]
+    _trade_opts = [("⭐ " if s == best_name else "") + s for s in _strat_base]
+    _default_idx = next((i for i, s in enumerate(_strat_base) if s == best_name), 0)
+    _safe_t2 = ticker.replace("=","_").replace("/","_")
+    _sel_strat = st.selectbox("查看策略交易记录", _trade_opts,
+                               index=_default_idx,
+                               key=f"trade_strat_{_safe_t2}")
+    _sel_idx   = _trade_opts.index(_sel_strat)
+    trades_view = _strat_data[_sel_idx]
+
+    if trades_view:
         st.markdown('<div class="section-header">📝 完整交易记录</div>', unsafe_allow_html=True)
-        tdf_raw = pd.DataFrame(trades)
-        # attach regime at entry
+        tdf_raw = pd.DataFrame(trades_view)
         tdf_raw["entry_regime"] = df["regime_label"].reindex(tdf_raw["entry_time"]).values
 
         # ── 筛选器 ────────────────────────────────────────────
