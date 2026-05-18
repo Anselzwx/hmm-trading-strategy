@@ -1199,9 +1199,10 @@ def render_asset(ticker: str) -> None:
     }
 
     _preset_cols = st.columns(len(PRESETS), gap="small")
-    _preset_key  = f"preset_{ticker}"
-    _start_key   = f"eq_start_{ticker}"
-    _end_key     = f"eq_end_{ticker}"
+    _safe_t      = ticker.replace("=", "_").replace("/", "_")
+    _preset_key  = f"preset_{_safe_t}"
+    _start_key   = f"eq_start_{_safe_t}"
+    _end_key     = f"eq_end_{_safe_t}"
 
     # 初始化 session_state
     if _preset_key not in st.session_state:
