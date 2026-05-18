@@ -337,21 +337,31 @@ def stoch_cci_chart(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def equity_chart(df: pd.DataFrame, res: dict = None) -> go.Figure:
+def equity_chart(df: pd.DataFrame, res: dict = None, best_key: str = "equity") -> go.Figure:
     bh  = STARTING_CAP * df["Close"] / df["Close"].iloc[0]
     best_eq = df["equity"] / df["equity"].iloc[0] * STARTING_CAP
     dd  = (best_eq - best_eq.cummax()) / best_eq.cummax() * 100
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         row_heights=[0.65, 0.35], vertical_spacing=0.03)
 
+    _key_map = {
+        "A · HMM信号投票":   "equity",
+        "B · Trailing Stop": "equity_b",
+        "C · EMA趋势跟踪":   "equity_c",
+        "D · HMM+布林带":    "equity_d",
+    }
+
     # ── 4条策略线 ──────────────────────────────────────────────
     strategies = [
-        ("equity",   "🟡 策略A · HMM信号投票",   "#ffd740", 2.0, None),
-        ("equity_b", "🟠 策略B · Trailing Stop",  "#fb923c", 1.5, "dot"),
-        ("equity_c", "🟢 策略C · EMA趋势跟踪",    "#4ade80", 1.5, "dashdot"),
-        ("equity_d", "🔴 策略D · HMM+布林带",     "#f87171", 1.5, "longdash"),
+        ("equity",   "策略A · HMM信号投票",   "#ffd740", 2.0, None),
+        ("equity_b", "策略B · Trailing Stop",  "#fb923c", 1.5, "dot"),
+        ("equity_c", "策略C · EMA趋势跟踪",    "#4ade80", 1.5, "dashdot"),
+        ("equity_d", "策略D · HMM+布林带",     "#f87171", 1.5, "longdash"),
     ]
     for key, name, color, width, dash in strategies:
+        _is_best = (key == best_key)
+        name = ("⭐ " if _is_best else "") + name
+        width = 3.5 if _is_best else width
         eq_data = None
         if key == "equity":
             eq_data = df["equity"] if "equity" in df.columns else None
@@ -1310,6 +1320,27 @@ def render_asset(ticker: str) -> None:
                                                          "峰值→修复所需时间", "yellow"), unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
+    # ── 四策略对比表 ─────────────────────────────────────────
+    st.markdown('<div class="section-header">🏆 四策略对比</div>', unsafe_allow_html=True)
+    _strat_rows = []
+    for _sname, (_sm, _st) in _all_strats.items():
+        if not _sm:
+            continue
+        _is_best = (_sname == best_name)
+        _prefix = "⭐ " if _is_best else "　 "
+        _strat_rows.append({
+            "策略": _prefix + _sname,
+            "总收益":  f"{_sm.get('total_return_pct',0):+.1f}%",
+            "年化":    f"{_sm.get('ann_return_pct',0):+.1f}%",
+            "Sharpe":  f"{_sm.get('sharpe',0):.2f}",
+            "Calmar":  f"{_sm.get('calmar',0):.2f}",
+            "MaxDD":   f"{_sm.get('max_drawdown_pct',0):.1f}%",
+            "胜率":    f"{_sm.get('win_rate_pct',0):.1f}%",
+            "交易笔数": str(_sm.get('n_trades',0)),
+        })
+    if _strat_rows:
+        st.dataframe(pd.DataFrame(_strat_rows), use_container_width=True, hide_index=True)
+
     # ── 资金曲线 + 回撤（使用已切片的 _df_slice）────────────────
     st.markdown('<div class="section-header">💰 资金曲线 vs 买入持有 vs SPY</div>', unsafe_allow_html=True)
     _res_eq = dict(res)
@@ -1318,7 +1349,10 @@ def render_asset(ticker: str) -> None:
         _v = res.get(_k)
         if _v is not None and isinstance(_v, pd.Series):
             _res_eq[_k] = _v.loc[_s:_e]
-    st.plotly_chart(equity_chart(_df_slice, _res_eq), use_container_width=True)
+    _key_map = {"A · HMM信号投票": "equity", "B · Trailing Stop": "equity_b",
+                "C · EMA趋势跟踪": "equity_c", "D · HMM+布林带": "equity_d"}
+    _best_eq_key = _key_map.get(best_name, "equity")
+    st.plotly_chart(equity_chart(_df_slice, _res_eq, best_key=_best_eq_key), use_container_width=True)
 
     # ── 滚动夏普 ─────────────────────────────────────────────
     st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
