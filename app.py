@@ -23,6 +23,7 @@ ASSETS_DIR  = os.path.join(os.path.dirname(__file__), "assets")
 def _safe_filename(ticker: str) -> str:
     return ticker.replace("=", "_").replace("/", "_")
 
+@st.cache_data(show_spinner=False)
 def _load_precomputed(ticker: str):
     path = os.path.join(RESULTS_DIR, f"{_safe_filename(ticker)}.pkl")
     if os.path.exists(path):
