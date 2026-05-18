@@ -1680,59 +1680,119 @@ def portfolio_equity_chart(eq_dict: dict) -> go.Figure:
 
 
 def render_portfolio_tab() -> None:
-    st.markdown('<div class="section-header">📊 多资产组合（等权 1/3 each）</div>', unsafe_allow_html=True)
+    ALL_TICKERS = ["AAPL","GC=F","SI=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
 
-    tickers = ["GC=F", "SI=F", "AAPL"]
-    fnames  = {"GC=F": "GC_F", "SI=F": "SI_F", "AAPL": "AAPL"}
-
-    eq_curves = {}
+    # 加载所有品种数据
+    eq_curves   = {}
     metrics_all = {}
-    for t in tickers:
+    bull_ratios = {}
+    for t in ALL_TICKERS:
         r = _load_precomputed(t)
         if r is None:
-            st.warning(f"{t} 预计算数据缺失，请先运行 precompute.py")
-            return
+            continue
         eq_curves[t]   = pd.Series(r["df"]["equity"].values, index=r["df"].index)
         metrics_all[t] = r["metrics"]
+        # bull ratio：该品种历史上bull状态占比（用于动态权重）
+        bull_ratios[t] = float(r["df"]["is_bull"].mean()) if "is_bull" in r["df"].columns else 0.5
 
-    # 组合资金曲线
-    st.plotly_chart(portfolio_equity_chart(eq_curves), use_container_width=True)
+    if not eq_curves:
+        st.warning("无预计算数据，请先运行 precompute.py")
+        return
 
-    # 单资产 vs 组合绩效对比
-    st.markdown('<div class="section-header">📋 绩效对比</div>', unsafe_allow_html=True)
+    loaded = list(eq_curves.keys())
 
-    idx  = eq_curves["GC=F"].index
-    rets = {t: eq_curves[t].reindex(idx, method="ffill").fillna(STARTING_CAP) / STARTING_CAP
-            for t in tickers}
-    port = sum(rets[t] for t in tickers) / 3 * STARTING_CAP
+    # 对齐时间轴（取所有品种的共同日期区间）
+    all_idx = sorted(set.intersection(*[set(eq_curves[t].index) for t in loaded]))
+    all_idx = pd.DatetimeIndex(all_idx)
+
+    def _align(t):
+        return eq_curves[t].reindex(all_idx, method="ffill").fillna(STARTING_CAP) / STARTING_CAP
+
+    rets = {t: _align(t) for t in loaded}
+
+    # ── 等权组合 ─────────────────────────────────────────────
+    n   = len(loaded)
+    port_eq = sum(rets[t] for t in loaded) / n * STARTING_CAP
+
+    # ── 动态权重组合（bull_ratio归一化）─────────────────────
+    total_bull = sum(bull_ratios[t] for t in loaded)
+    dyn_w = {t: bull_ratios[t] / total_bull for t in loaded}
+    port_dyn = sum(rets[t] * dyn_w[t] for t in loaded) * STARTING_CAP
 
     def _port_metrics(eq):
         tr  = (eq.iloc[-1] / STARTING_CAP - 1) * 100
-        rm  = eq.cummax(); mdd = ((eq-rm)/rm*100).min()
+        rm  = eq.cummax(); mdd = ((eq - rm) / rm * 100).min()
         dr  = eq.pct_change().dropna()
         sh  = dr.mean() / dr.std() * np.sqrt(252) if dr.std() > 0 else 0
-        cal = tr / abs(mdd) if mdd != 0 else 0
-        return tr, sh, mdd, cal
+        cal = abs(tr / mdd) if mdd != 0 else 0
+        ann = ((eq.iloc[-1] / STARTING_CAP) ** (252 / max(len(eq), 1)) - 1) * 100
+        return tr, sh, mdd, cal, ann
 
+    # ── 顶部指标卡 ───────────────────────────────────────────
+    st.markdown('<div class="section-header">📊 全品种组合（13资产）</div>', unsafe_allow_html=True)
+    ptr_e, psh_e, pmdd_e, pcal_e, pann_e = _port_metrics(port_eq)
+    ptr_d, psh_d, pmdd_d, pcal_d, pann_d = _port_metrics(port_dyn)
+
+    cc1, cc2, cc3, cc4 = st.columns(4, gap="small")
+    cc1.markdown(_metric("等权组合收益",  f"{ptr_e:+.1f}%",  f"年化 {pann_e:+.1f}%", "green" if ptr_e>0 else "red"), unsafe_allow_html=True)
+    cc2.markdown(_metric("等权 Sharpe",   f"{psh_e:.2f}",    f"MaxDD {pmdd_e:.1f}%",  "green" if psh_e>1 else "yellow"), unsafe_allow_html=True)
+    cc3.markdown(_metric("动态权重收益",  f"{ptr_d:+.1f}%",  f"年化 {pann_d:+.1f}%", "green" if ptr_d>0 else "red"), unsafe_allow_html=True)
+    cc4.markdown(_metric("动态权重 Sharpe", f"{psh_d:.2f}",  f"MaxDD {pmdd_d:.1f}%",  "green" if psh_d>1 else "yellow"), unsafe_allow_html=True)
+
+    # ── 组合资金曲线 ─────────────────────────────────────────
+    fig_port = go.Figure()
+    COLORS = ["#ffd740","#94a3b8","#60a5fa","#a78bfa","#34d399","#fb923c",
+              "#f87171","#38bdf8","#e879f9","#4ade80","#facc15","#f472b6","#818cf8"]
+    for i, t in enumerate(loaded):
+        fig_port.add_trace(go.Scatter(
+            x=all_idx, y=rets[t] * STARTING_CAP,
+            mode="lines", name=t,
+            line=dict(color=COLORS[i % len(COLORS)], width=1.0, dash="dot"),
+            opacity=0.45))
+    fig_port.add_trace(go.Scatter(
+        x=all_idx, y=port_eq, mode="lines", name="🟡 等权组合",
+        line=dict(color="#ffd740", width=2.5)))
+    fig_port.add_trace(go.Scatter(
+        x=all_idx, y=port_dyn, mode="lines", name="🟢 动态权重组合",
+        line=dict(color="#00e676", width=2.5),
+        fill="tozeroy", fillcolor="rgba(0,230,118,0.04)"))
+    fig_port.update_layout(
+        **_base_layout(height=420),
+        yaxis=dict(gridcolor=GRID_COLOR, tickprefix="$"),
+        xaxis=dict(gridcolor=GRID_COLOR),
+        legend=dict(orientation="h", y=1.06, x=0, font=dict(size=10)))
+    st.plotly_chart(fig_port, use_container_width=True)
+
+    # ── 各品种绩效表 ─────────────────────────────────────────
+    st.markdown('<div class="section-header">📋 各品种绩效 vs 组合</div>', unsafe_allow_html=True)
     rows = []
-    for t in tickers:
+    for t in loaded:
         m = metrics_all[t]
-        rows.append({"资产": t,
-                     "Return": f"{m['total_return_pct']:+.1f}%",
-                     "Sharpe": f"{m['sharpe']:.2f}",
-                     "MaxDD":  f"{m['max_drawdown_pct']:.1f}%",
-                     "Calmar": f"{m['calmar']:.1f}",
-                     "Trades": m["n_trades"]})
-    ptr, psh, pmdd, pcal = _port_metrics(port)
-    rows.append({"资产": "🟢 Portfolio (1/3)",
-                 "Return": f"{ptr:+.1f}%",
-                 "Sharpe": f"{psh:.2f}",
-                 "MaxDD":  f"{pmdd:.1f}%",
-                 "Calmar": f"{pcal:.1f}",
-                 "Trades": "—"})
-    df_rows = pd.DataFrame(rows)
-    df_rows["Trades"] = df_rows["Trades"].astype(str)
-    st.dataframe(df_rows, use_container_width=True, hide_index=True)
+        bh = m.get("bh_return_pct", 0)
+        beat = "✅" if m["total_return_pct"] > bh else "❌"
+        rows.append({
+            "资产":   t,
+            "策略收益": f"{m['total_return_pct']:+.1f}%",
+            "B&H":    f"{bh:+.1f}%",
+            "跑赢":   beat,
+            "Sharpe": f"{m['sharpe']:.2f}",
+            "Calmar": f"{m['calmar']:.2f}",
+            "MaxDD":  f"{m['max_drawdown_pct']:.1f}%",
+            "动态权重": f"{dyn_w[t]*100:.1f}%",
+        })
+    rows.append({
+        "资产":   "🟡 等权组合",
+        "策略收益": f"{ptr_e:+.1f}%", "B&H": "—", "跑赢": "—",
+        "Sharpe": f"{psh_e:.2f}", "Calmar": f"{pcal_e:.2f}",
+        "MaxDD":  f"{pmdd_e:.1f}%", "动态权重": "—",
+    })
+    rows.append({
+        "资产":   "🟢 动态权重组合",
+        "策略收益": f"{ptr_d:+.1f}%", "B&H": "—", "跑赢": "—",
+        "Sharpe": f"{psh_d:.2f}", "Calmar": f"{pcal_d:.2f}",
+        "MaxDD":  f"{pmdd_d:.1f}%", "动态权重": "100%",
+    })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     # 摩擦成本说明
     st.markdown('<div class="section-header">💸 摩擦成本 & 保证金参数</div>', unsafe_allow_html=True)

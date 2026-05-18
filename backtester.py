@@ -41,6 +41,10 @@ MAX_HOLD_HOURLY  = 24 * 30
 MAX_HOLD_DAILY   = 60
 ATR_TRAIL_MULT   = 3.0   # 多头：最高价 - N×ATR(14) 作为动态止损线
 SHORT_ATR_MULT   = 2.5   # 空头：最低价 + N×ATR(14)
+SHORT_TAKE_PROFIT = 0.15  # 空头止盈：盈利达15%自动平仓
+VOL_REGIME_WINDOW = 60    # 波动率状态判断窗口（日）
+VOL_REGIME_MULT   = 1.5   # 当前波动率超过历史中位数*倍数时视为高波动
+VOL_REGIME_SCALE  = 0.6   # 高波动环境下仓位缩减至60%
 
 # 摩擦成本（分资产类型）
 # 期货：滑点+手续费 0.05%/side；股票：0.02%/side
@@ -393,8 +397,10 @@ def _simulate(df: pd.DataFrame,
     reduce_price            = None
 
     # 波动率归一化：用历史中位数作为目标波动率
-    vt_target = float(df["vol_volatility"].dropna().median())
-    vt_scale  = 1.0
+    vt_target  = float(df["vol_volatility"].dropna().median())
+    vt_scale   = 1.0
+    # 滚动波动率中位数序列（用于高波动状态判断）
+    _rvol_median = df["vol_volatility"].rolling(VOL_REGIME_WINDOW, min_periods=20).median()
 
     for ts, row in df.iterrows():
         price    = float(row["Close"])
@@ -434,6 +440,8 @@ def _simulate(df: pd.DataFrame,
                 account_equity = capital + unrealised_pnl
                 if notional > 0 and account_equity < maint_margin * notional:
                     exit_reason = "MarginCall"
+                elif short_ret >= SHORT_TAKE_PROFIT:
+                    exit_reason = f"Short TakeProfit (+{SHORT_TAKE_PROFIT*100:.0f}%)"
                 elif price >= atr_trail_stop and hold_bars >= SHORT_MIN_HOLD:
                     exit_reason = f"Short ATR Trail Stop"
                 elif price >= stop_price:
@@ -555,7 +563,10 @@ def _simulate(df: pd.DataFrame,
             # 波动率归一化仓位：高波动期自动缩仓
             entry_rvol   = float(row.get("vol_volatility", vt_target))
             vt_scale     = float(np.clip(vt_target / entry_rvol, VT_MIN, VT_MAX)) if entry_rvol > 0 else 1.0
-            pos_size_pct = base_pct * vt_scale
+            # 高波动率环境全局缩仓：当前rvol超过滚动中位数1.5倍时仓位×0.6
+            _rvol_med_now = float(_rvol_median.get(ts, vt_target) or vt_target)
+            _vol_regime_scale = VOL_REGIME_SCALE if (_rvol_med_now > 0 and entry_rvol > VOL_REGIME_MULT * _rvol_med_now) else 1.0
+            pos_size_pct = base_pct * vt_scale * _vol_regime_scale
             max_pos_by_margin = 1.0 / (LEVERAGE * initial_margin)
             pos_size_pct      = min(pos_size_pct, max_pos_by_margin)
 
