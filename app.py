@@ -1808,7 +1808,7 @@ def render_portfolio_tab() -> None:
         </div>""", unsafe_allow_html=True)
     with c2:
         rows_m = []
-        for t in tickers:
+        for t in loaded:
             mp = MARGIN_PARAMS.get(t, {})
             rows_m.append({
                 "资产": t,
