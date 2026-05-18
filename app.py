@@ -1680,7 +1680,7 @@ def portfolio_equity_chart(eq_dict: dict) -> go.Figure:
 
 
 def render_portfolio_tab() -> None:
-    ALL_TICKERS = ["AAPL","GC=F","SI=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
+    ALL_TICKERS = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
 
     # 加载所有品种数据
     eq_curves   = {}

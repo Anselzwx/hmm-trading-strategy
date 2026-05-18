@@ -11,7 +11,7 @@ from backtester_v2 import run_backtest_v2
 from strategy_c  import run_strategy_c
 from strategy_d  import run_strategy_d
 
-TICKERS = ["AAPL", "GC=F", "SI=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR"]
+TICKERS = ["AAPL", "GC=F", "SI=F", "CL=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR"]
 OUT_DIR = os.path.join(os.path.dirname(__file__), "results")
 
 
