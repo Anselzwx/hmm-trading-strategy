@@ -127,6 +127,26 @@ def fit_hmm(features: np.ndarray, n_states: int = N_STATES) -> hmm.GaussianHMM:
     return model
 
 
+def select_n_states(features: np.ndarray,
+                    candidates: Tuple[int, ...] = (3, 4, 5, 6, 7)) -> int:
+    """用 BIC 在 candidates 中选最优状态数（BIC越小越好）。"""
+    best_n, best_bic = candidates[0], np.inf
+    n_samples, n_features = features.shape
+    for n in candidates:
+        try:
+            m = fit_hmm(features, n)
+            log_likelihood = m.score(features)
+            # BIC = -2*logL + k*ln(N)，k = 自由参数数
+            # full covariance: k = n*(n-1) + n*f + n*f*(f+1)/2
+            k = n * (n - 1) + n * n_features + n * n_features * (n_features + 1) // 2
+            bic = -2 * log_likelihood + k * np.log(n_samples)
+            if bic < best_bic:
+                best_bic, best_n = bic, n
+        except Exception:
+            continue
+    return best_n
+
+
 def identify_states(model: hmm.GaussianHMM, bull_top: int = 2) -> Tuple[List[int], int]:
     mean_returns = model.means_[:, 0]
     ranked       = np.argsort(mean_returns)[::-1]
@@ -689,6 +709,10 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
 
     features = get_hmm_features(df)
     n        = len(features)
+
+    # n_states=0 → 自动用 BIC 选最优状态数
+    if n_states == 0:
+        n_states = select_n_states(features)
 
     wf_states, is_bull_arr, is_bear_arr = _walk_forward_states(
         features, n, n_states, bull_top=bull_top)
