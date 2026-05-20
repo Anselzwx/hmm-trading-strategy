@@ -1329,8 +1329,7 @@ def render_asset(ticker: str) -> None:
             continue
         _is_best = (_sname == best_name)
         _prefix = "⭐ " if _is_best else "　 "
-        _sidx = list(_all_strats.keys()).index(_sname)
-        _n_trades = _sm.get('n_trades') or len(_strat_data[_sidx])
+        _n_trades = _sm.get('n_trades') or len(_st)
         _calmar = _sm.get('calmar')
         if _calmar is None and _sm.get('ann_return_pct') and _sm.get('max_drawdown_pct'):
             _calmar = abs(_sm['ann_return_pct'] / _sm['max_drawdown_pct']) if _sm['max_drawdown_pct'] != 0 else 0
