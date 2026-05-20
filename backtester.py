@@ -42,6 +42,11 @@ MAX_HOLD_DAILY   = 60
 ATR_TRAIL_MULT   = 3.0   # 多头：最高价 - N×ATR(14) 作为动态止损线
 SHORT_ATR_MULT   = 2.5   # 空头：最低价 + N×ATR(14)
 SHORT_TAKE_PROFIT = 0.15  # 空头止盈：盈利达15%自动平仓
+
+# 组合层面熔断参数
+CIRCUIT_BREAKER_WINDOW  = 30    # 滚动窗口（日）
+CIRCUIT_BREAKER_THRESH  = -0.15 # 单资产滚动30日回撤超过-15%触发熔断
+CIRCUIT_BREAKER_PAUSE   = 20    # 熔断后暂停交易天数
 VOL_REGIME_WINDOW = 60    # 波动率状态判断窗口（日）
 VOL_REGIME_MULT   = 1.5   # 当前波动率超过历史中位数*倍数时视为高波动
 VOL_REGIME_SCALE  = 0.6   # 高波动环境下仓位缩减至60%
@@ -417,6 +422,7 @@ def _simulate(df: pd.DataFrame,
     realised_from_reduce    = 0.0
     reduce_time             = None
     reduce_price            = None
+    circuit_breaker_left    = 0   # 熔断剩余天数
 
     # 波动率归一化：用历史中位数作为目标波动率
     vt_target  = float(df["vol_volatility"].dropna().median())
@@ -575,8 +581,19 @@ def _simulate(df: pd.DataFrame,
         if cooldown_left > 0:
             cooldown_left -= 1
 
+        # ── 熔断检测（空仓时才检测，持仓中不强平）────────────────
+        if not in_trade and circuit_breaker_left <= 0:
+            eq_now = equity_curve[-CIRCUIT_BREAKER_WINDOW:] if len(equity_curve) >= CIRCUIT_BREAKER_WINDOW else equity_curve
+            if len(eq_now) >= 5:
+                peak_w = max(eq_now)
+                drawdown_w = (equity_curve[-1] - peak_w) / peak_w if peak_w > 0 else 0
+                if drawdown_w < CIRCUIT_BREAKER_THRESH:
+                    circuit_breaker_left = CIRCUIT_BREAKER_PAUSE
+        if circuit_breaker_left > 0:
+            circuit_breaker_left -= 1
+
         # ── 多头开仓 ─────────────────────────────────────────
-        if (not in_trade and cooldown_left == 0
+        if (not in_trade and cooldown_left == 0 and circuit_breaker_left == 0
                 and row["is_bull"]
                 and row["signal_score"] >= entry_min_conf
                 and float(row["adx"]) > adx_entry):
@@ -619,7 +636,7 @@ def _simulate(df: pd.DataFrame,
                 bear_pre_consec = 0
 
         # ── 空头开仓（Bear 状态 + 无仓位 + EMA50跌破确认）──────
-        if (ENABLE_SHORT and not in_trade and cooldown_left == 0
+        if (ENABLE_SHORT and not in_trade and cooldown_left == 0 and circuit_breaker_left == 0
                 and bear_pre_consec >= SHORT_CONFIRM
                 and float(row["adx"]) > adx_entry
                 and float(row.get("Close", 0)) < float(row.get("ema50", float("inf")))):
