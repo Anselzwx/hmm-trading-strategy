@@ -14,7 +14,8 @@ from datetime import datetime
 from data_loader import fetch_data
 from backtester  import (run_backtest, STARTING_CAP, MIN_CONFIRMATIONS,
                           _position_size, N_STATES, TICKER_PARAMS,
-                          FRICTION_PCT, MARGIN_PARAMS, LEVERAGE)
+                          FRICTION_PCT, MARGIN_PARAMS, LEVERAGE,
+                          ATR_TRAIL_MULT, ENABLE_SHORT)
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
 ASSETS_DIR  = os.path.join(os.path.dirname(__file__), "assets")
@@ -1526,6 +1527,66 @@ def render_asset(ticker: str) -> None:
     # ── XGBoost 多因子预测（仅 Gold）────────────────────────────
     if ticker == "GC=F":
         render_xgb_panel()
+
+    # ── 参数敏感性分析 ────────────────────────────────────────
+    st.markdown('<div class="section-header">🔬 参数敏感性分析</div>', unsafe_allow_html=True)
+    st.caption("调整以下参数，实时查看对回测结果的影响（不影响主回测）")
+    _safe_t3 = ticker.replace("=","_").replace("/","_")
+    with st.expander("展开参数调整面板", expanded=False):
+        _sc1, _sc2, _sc3 = st.columns(3, gap="medium")
+        with _sc1:
+            _s_stop = st.slider("止损比例 (%)", -20, -3,
+                                int(res.get("stop", -8) * 100) if res.get("stop") else -8,
+                                step=1, key=f"sens_stop_{_safe_t3}") / 100
+            _s_atr = st.slider("ATR 止损倍数", 1.0, 6.0, float(ATR_TRAIL_MULT),
+                               step=0.5, key=f"sens_atr_{_safe_t3}")
+        with _sc2:
+            _s_conf = st.slider("最小信号分 (min_conf)", 1, 4,
+                                int(res.get("min_conf", min_conf)),
+                                step=1, key=f"sens_conf_{_safe_t3}")
+            _s_adx = st.slider("ADX 门槛", 10, 40, 20,
+                               step=5, key=f"sens_adx_{_safe_t3}")
+        with _sc3:
+            _s_cb = st.slider("熔断阈值 (%)", -30, -5, -15,
+                              step=5, key=f"sens_cb_{_safe_t3}") / 100
+            _s_short = st.checkbox("启用做空", value=ENABLE_SHORT,
+                                   key=f"sens_short_{_safe_t3}")
+
+        if st.button("运行敏感性回测", key=f"sens_run_{_safe_t3}", type="primary"):
+            with st.spinner("回测中..."):
+                try:
+                    import backtester as _bt
+                    _orig_atr   = _bt.ATR_TRAIL_MULT
+                    _orig_cb    = _bt.CIRCUIT_BREAKER_THRESH
+                    _orig_short = _bt.ENABLE_SHORT
+                    _bt.ATR_TRAIL_MULT          = _s_atr
+                    _bt.CIRCUIT_BREAKER_THRESH  = _s_cb
+                    _bt.ENABLE_SHORT            = _s_short
+                    _tp_orig = _bt.TICKER_PARAMS.get(ticker, {}).copy()
+                    _bt.TICKER_PARAMS[ticker] = {**_tp_orig, "stop": _s_stop,
+                                                 "min_conf": _s_conf, "adx_entry": _s_adx}
+                    _s_res = _bt.run_backtest(df, ticker)
+                    _bt.ATR_TRAIL_MULT         = _orig_atr
+                    _bt.CIRCUIT_BREAKER_THRESH = _orig_cb
+                    _bt.ENABLE_SHORT           = _orig_short
+                    _bt.TICKER_PARAMS[ticker]  = _tp_orig
+
+                    _sm = _s_res["metrics"]
+                    _d1, _d2, _d3, _d4 = st.columns(4, gap="small")
+                    _rc = "green" if _sm["total_return_pct"] > metrics["total_return_pct"] else "red"
+                    _d1.markdown(_metric("新总收益",  f"{_sm['total_return_pct']:+.1f}%",
+                                         f"原 {metrics['total_return_pct']:+.1f}%", _rc), unsafe_allow_html=True)
+                    _rc2 = "green" if _sm["sharpe"] > metrics["sharpe"] else "red"
+                    _d2.markdown(_metric("新 Sharpe", f"{_sm['sharpe']:.2f}",
+                                         f"原 {metrics['sharpe']:.2f}", _rc2), unsafe_allow_html=True)
+                    _rc3 = "green" if _sm["max_drawdown_pct"] > metrics["max_drawdown_pct"] else "red"
+                    _d3.markdown(_metric("新 MaxDD",  f"{_sm['max_drawdown_pct']:.1f}%",
+                                         f"原 {metrics['max_drawdown_pct']:.1f}%", _rc3), unsafe_allow_html=True)
+                    _rc4 = "green" if _sm["calmar"] > metrics["calmar"] else "red"
+                    _d4.markdown(_metric("新 Calmar", f"{_sm['calmar']:.2f}",
+                                         f"原 {metrics['calmar']:.2f}", _rc4), unsafe_allow_html=True)
+                except Exception as _e:
+                    st.error(f"回测失败: {_e}")
 
 
 # ──────────────────────────────────────────────────────────────
