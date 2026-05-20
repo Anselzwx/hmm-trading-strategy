@@ -573,10 +573,11 @@ def _simulate(df: pd.DataFrame,
             pos_size_pct      = min(pos_size_pct, max_pos_by_margin)
 
             atr_val      = float(row.get("atr", price * 0.01))
-            position     = capital * pos_size_pct / price
-            entry_price  = price * (1 + friction_pct)
+            exec_price   = float(row.get("next_open", price))   # 次日开盘价执行
+            position     = capital * pos_size_pct / exec_price
+            entry_price  = exec_price * (1 + friction_pct)
             stop_price   = entry_price * (1 + stop_loss_pct)
-            peak_price   = price
+            peak_price   = exec_price
             atr_trail_stop = peak_price - ATR_TRAIL_MULT * atr_val
             entry_time   = ts
             in_trade     = True
@@ -609,10 +610,11 @@ def _simulate(df: pd.DataFrame,
             pos_size_pct = min(pos_size_pct, max_pos_by_margin)
 
             atr_val      = float(row.get("atr", price * 0.01))
-            position     = capital * pos_size_pct / price
-            entry_price  = price * (1 - friction_pct)
+            exec_price   = float(row.get("next_open", price))   # 次日开盘价执行
+            position     = capital * pos_size_pct / exec_price
+            entry_price  = exec_price * (1 - friction_pct)
             stop_price   = entry_price * (1 + SHORT_STOP_PCT)
-            trough_price   = price
+            trough_price   = exec_price
             atr_trail_stop = trough_price + SHORT_ATR_MULT * atr_val
             entry_time   = ts
             in_trade     = True
@@ -710,6 +712,9 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     _, score = compute_signals(df)
     df["signal_score"] = score
     df["tech_signal"]  = score >= min_conf
+
+    # 次日开盘价（实盘在收盘后确认信号，次日开盘执行）
+    df["next_open"] = df["Open"].shift(-1).fillna(df["Close"])
 
     # Regime Filter（诊断层，不影响进场）
     ma_ok  = (df["ema50"] > df["ema200"]) & (df["ema50_slope"] > 0)
