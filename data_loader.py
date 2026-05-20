@@ -176,13 +176,36 @@ def _fetch_fmp(ticker: str) -> pd.DataFrame:
 # 公开 API
 # ---------------------------------------------------------------------------
 
+def _load_market_features() -> pd.DataFrame:
+    """加载 VIX（VIXY）和美元指数（DXUSD）作为市场特征。"""
+    frames = {}
+    for sym, col in [("VIXY", "vix_ret"), ("DXUSD", "dxy_ret")]:
+        try:
+            raw = _fetch_fmp(sym)
+            ret = np.log(raw["Close"] / raw["Close"].shift(1)) * 100
+            frames[col] = ret
+        except Exception:
+            pass
+    if not frames:
+        return pd.DataFrame()
+    mkt = pd.DataFrame(frames)
+    mkt = mkt.resample("D").last().ffill()
+    # z-score 标准化
+    for col in mkt.columns:
+        mu, sigma = mkt[col].mean(), mkt[col].std()
+        if sigma > 0:
+            mkt[col] = (mkt[col] - mu) / sigma
+    return mkt
+
+
 def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFrame:
     """
     返回带以下列的 DataFrame：
         Open, High, Low, Close, Volume,
         returns, range_pct, vol_volatility,   ← 价格特征
         cpi_mom, core_cpi_mom, core_pce_mom,  ← 宏观特征（forward-fill）
-        jobless_claims, ism_pmi
+        jobless_claims, ism_pmi,
+        vix_ret, dxy_ret                       ← 市场特征
     """
     if not force_refresh and _cache_is_fresh(ticker):
         return _load_cache(ticker)
@@ -199,7 +222,6 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
     if not macro.empty:
         macro.index = macro.index.tz_localize(None)
         df = df.join(macro, how="left")
-        # 对宏观列做标准化（z-score），避免量纲差异影响 HMM
         for col in MACRO_TABLES.values():
             if col in df.columns:
                 mu, sigma = df[col].mean(), df[col].std()
@@ -207,7 +229,18 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
                     df[col] = (df[col] - mu) / sigma
                 df[col] = df[col].ffill()
 
-    df.dropna(inplace=True)
+    # 拼入市场特征（VIX、美元指数），跳过自身
+    if ticker not in ("VIXY", "DXUSD"):
+        mkt = _load_market_features()
+        if not mkt.empty:
+            mkt.index = mkt.index.tz_localize(None)
+            df = df.join(mkt, how="left")
+            for col in mkt.columns:
+                if col in df.columns:
+                    df[col] = df[col].ffill().fillna(0.0)  # 早期无数据填0（中性）
+
+    # 只对核心价格特征做 dropna，宏观/市场特征已 ffill
+    df.dropna(subset=["returns", "range_pct", "vol_volatility"], inplace=True)
     _save_cache(ticker, df)
     return df
 
@@ -215,4 +248,5 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
 def get_hmm_features(df: pd.DataFrame) -> "np.ndarray":
     base = ["returns", "range_pct", "vol_volatility"]
     macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
-    return df[base + macro_cols].values
+    mkt_cols   = [c for c in ("vix_ret", "dxy_ret") if c in df.columns]
+    return df[base + macro_cols + mkt_cols].values
