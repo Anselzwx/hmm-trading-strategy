@@ -1329,15 +1329,20 @@ def render_asset(ticker: str) -> None:
             continue
         _is_best = (_sname == best_name)
         _prefix = "⭐ " if _is_best else "　 "
+        _sidx = list(_all_strats.keys()).index(_sname)
+        _n_trades = _sm.get('n_trades') or len(_strat_data[_sidx])
+        _calmar = _sm.get('calmar')
+        if _calmar is None and _sm.get('ann_return_pct') and _sm.get('max_drawdown_pct'):
+            _calmar = abs(_sm['ann_return_pct'] / _sm['max_drawdown_pct']) if _sm['max_drawdown_pct'] != 0 else 0
         _strat_rows.append({
             "策略": _prefix + _sname,
             "总收益":  f"{_sm.get('total_return_pct',0):+.1f}%",
             "年化":    f"{_sm.get('ann_return_pct',0):+.1f}%",
             "Sharpe":  f"{_sm.get('sharpe',0):.2f}",
-            "Calmar":  f"{_sm.get('calmar',0):.2f}",
+            "Calmar":  f"{(_calmar or 0):.2f}",
             "MaxDD":   f"{_sm.get('max_drawdown_pct',0):.1f}%",
             "胜率":    f"{_sm.get('win_rate_pct',0):.1f}%",
-            "交易笔数": str(_sm.get('n_trades',0)),
+            "交易笔数": str(_n_trades),
         })
     if _strat_rows:
         st.dataframe(pd.DataFrame(_strat_rows), use_container_width=True, hide_index=True)
@@ -1466,8 +1471,9 @@ def render_asset(ticker: str) -> None:
         ), unsafe_allow_html=True)
 
     # ── 完整交易记录（含筛选）────────────────────────────────
-    _strat_base = ["A · HMM信号投票", "B · Trailing Stop", "C · EMA趋势跟踪", "D · HMM+布林带"]
-    _strat_data = [res["trades"], res.get("trades_b") or [], res.get("trades_c") or [], res.get("trades_d") or []]
+    _strat_base  = ["A · HMM信号投票", "B · Trailing Stop", "C · EMA趋势跟踪", "D · HMM+布林带"]
+    _strat_mets  = [res["metrics"], res.get("metrics_b") or {}, res.get("metrics_c") or {}, res.get("metrics_d") or {}]
+    _strat_data  = [res["trades"], res.get("trades_b") or [], res.get("trades_c") or [], res.get("trades_d") or []]
     _trade_opts = [("⭐ " if s == best_name else "") + s for s in _strat_base]
     _default_idx = next((i for i, s in enumerate(_strat_base) if s == best_name), 0)
     _safe_t2 = ticker.replace("=","_").replace("/","_")
