@@ -37,7 +37,7 @@ warnings.filterwarnings("ignore")
 from signal_generator import generate_signal
 from data_loader import ASSET_LABELS
 
-RECIPIENT    = "zhao.wenxu@northeastern.edu"
+RECIPIENT    = "anselwilliam789@gmail.com"
 TICKERS      = ["AAPL", "GC=F", "SI=F", "CL=F",
                  "NVDA", "META", "AMZN", "GOOG",
                  "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR"]
