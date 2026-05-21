@@ -173,6 +173,49 @@ def _fetch_fmp(ticker: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# 财报日过滤
+# ---------------------------------------------------------------------------
+
+def fetch_earnings_dates(ticker: str) -> pd.DatetimeIndex:
+    """
+    从 FMP 拉取历史财报日期，返回 DatetimeIndex。
+    仅适用于股票（商品期货无财报，返回空）。
+    """
+    if ticker not in FMP_SYMBOL or ticker in ("GC=F", "SI=F", "CL=F"):
+        return pd.DatetimeIndex([])
+    symbol = FMP_SYMBOL.get(ticker, ticker)
+    try:
+        url = (f"https://financialmodelingprep.com/stable/earnings-calendar"
+               f"?symbol={symbol}&from={FMP_START}"
+               f"&to={datetime.now().strftime('%Y-%m-%d')}&apikey={FMP_API_KEY}")
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            return pd.DatetimeIndex([])
+        dates = pd.to_datetime([d["date"] for d in data if "date" in d], errors="coerce")
+        return dates.dropna()
+    except Exception:
+        return pd.DatetimeIndex([])
+
+
+def earnings_blackout_mask(index: pd.DatetimeIndex,
+                           earnings_dates: pd.DatetimeIndex,
+                           pre_days: int = 3,
+                           post_days: int = 1) -> pd.Series:
+    """
+    返回 bool Series（True = 财报前后封锁期，不允许开新仓）。
+    index: 回测 DataFrame 的时间索引。
+    """
+    mask = pd.Series(False, index=index)
+    for ed in earnings_dates:
+        start = ed - pd.Timedelta(days=pre_days)
+        end   = ed + pd.Timedelta(days=post_days)
+        mask.loc[(index >= start) & (index <= end)] = True
+    return mask
+
+
+# ---------------------------------------------------------------------------
 # 公开 API
 # ---------------------------------------------------------------------------
 

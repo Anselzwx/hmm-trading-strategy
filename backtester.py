@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 from hmmlearn import hmm
 
-from data_loader import get_hmm_features, fetch_data, DAILY_TICKERS
+from data_loader import (get_hmm_features, fetch_data, DAILY_TICKERS,
+                         fetch_earnings_dates, earnings_blackout_mask)
 
 warnings.filterwarnings("ignore")
 
@@ -82,21 +83,30 @@ WF_STEP_RATIO   = 0.1
 # min_conf: 信号阈值
 # stop:     止损比例
 # hold_mult: 最大持仓倍数（相对全局MAX_HOLD）
+# 资产分类
+COMMODITY_TICKERS = {"GC=F", "SI=F", "CL=F"}           # 商品：启用做空，正常止损
+TECH_TICKERS      = {"AAPL","NVDA","META","AMZN","GOOG",
+                     "MSFT","TSLA","HOOD","PLTR"}        # 科技股：禁止做空，放宽止损
+# 高波动科技股：ATR倍数放大
+HIGH_VOL_ATR: Dict[str, float] = {
+    "TSLA": 5.0, "NVDA": 5.0, "HOOD": 5.0, "PLTR": 4.5,
+}
+
 TICKER_PARAMS: Dict[str, Dict] = {
-    "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.06, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
+    "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
     "GC=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
     "SI=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
     "CL=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
-    "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
-    "META": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "AMZN": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "GOOG": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "MSFT": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "TSLA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "HOOD": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
+    "META": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "AMZN": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "GOOG": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "MSFT": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "TSLA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.15, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "HOOD": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
     "SPY":  {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
     "FXI":  {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
-    "PLTR": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.10, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "PLTR": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.15, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
 }
 
 # Regime exit 连续确认 bars（1=原版，2=Gold 定案）
@@ -382,13 +392,17 @@ def _simulate(df: pd.DataFrame,
               stop_loss_pct: float = STOP_LOSS_PCT,
               hold_mult: float = 1.0,
               min_conf: int = MIN_CONFIRMATIONS,
-              ticker: str = "") -> Tuple[list, list]:
+              ticker: str = "",
+              earnings_blackout: "pd.Series | None" = None) -> Tuple[list, list]:
     base_cd           = COOLDOWN_DAILY if is_daily else COOLDOWN_HOURLY
     max_hold          = int((MAX_HOLD_DAILY if is_daily else MAX_HOLD_HOURLY) * hold_mult)
     bear_confirm      = BEAR_CONFIRM.get(ticker, 1)
     tp                = TICKER_PARAMS.get(ticker, {})
+    # 科技股禁止做空；高波动股使用更大ATR倍数
+    allow_short       = ENABLE_SHORT and ticker not in TECH_TICKERS
+    atr_trail_mult    = HIGH_VOL_ATR.get(ticker, ATR_TRAIL_MULT)
     # 分资产摩擦成本
-    friction_pct      = FRICTION_FUTURES if ticker in ("GC=F", "SI=F") else FRICTION_EQUITY
+    friction_pct      = FRICTION_FUTURES if ticker in ("GC=F", "SI=F", "CL=F") else FRICTION_EQUITY
     mp                = MARGIN_PARAMS.get(ticker, {"initial_margin": 0.40, "maintenance_margin": 0.25})
     initial_margin    = mp["initial_margin"]
     maint_margin      = mp["maintenance_margin"]
@@ -505,7 +519,7 @@ def _simulate(df: pd.DataFrame,
                 # 更新最高价，ATR trailing stop 下移
                 if price > peak_price:
                     peak_price     = price
-                    atr_trail_stop = peak_price - ATR_TRAIL_MULT * atr_val
+                    atr_trail_stop = peak_price - atr_trail_mult * atr_val
                 notional        = position * price * LEVERAGE
                 unrealised_pnl  = (price - entry_price) * position * LEVERAGE
                 account_equity  = capital + unrealised_pnl
@@ -593,7 +607,10 @@ def _simulate(df: pd.DataFrame,
             circuit_breaker_left -= 1
 
         # ── 多头开仓 ─────────────────────────────────────────
+        _earn_blocked = (earnings_blackout is not None and
+                         bool(earnings_blackout.get(ts, False)))
         if (not in_trade and cooldown_left == 0 and circuit_breaker_left == 0
+                and not _earn_blocked
                 and row["is_bull"]
                 and row["signal_score"] >= entry_min_conf
                 and float(row["adx"]) > adx_entry):
@@ -615,7 +632,7 @@ def _simulate(df: pd.DataFrame,
             entry_price  = exec_price * (1 + friction_pct)
             stop_price   = entry_price * (1 + stop_loss_pct)
             peak_price   = exec_price
-            atr_trail_stop = peak_price - ATR_TRAIL_MULT * atr_val
+            atr_trail_stop = peak_price - atr_trail_mult * atr_val
             entry_time   = ts
             in_trade     = True
             is_short     = False
@@ -636,7 +653,8 @@ def _simulate(df: pd.DataFrame,
                 bear_pre_consec = 0
 
         # ── 空头开仓（Bear 状态 + 无仓位 + EMA50跌破确认）──────
-        if (ENABLE_SHORT and not in_trade and cooldown_left == 0 and circuit_breaker_left == 0
+        if (allow_short and not in_trade and cooldown_left == 0 and circuit_breaker_left == 0
+                and not _earn_blocked
                 and bear_pre_consec >= SHORT_CONFIRM
                 and float(row["adx"]) > adx_entry
                 and float(row.get("Close", 0)) < float(row.get("ema50", float("inf")))):
@@ -762,7 +780,19 @@ def run_backtest(df: pd.DataFrame, ticker: str = "AAPL") -> Dict:
     adx_ok = df["adx"] > 20
     df["regime_filter"] = (ma_ok & adx_ok).fillna(False)
 
-    equity_curve, trades = _simulate(df, is_daily, stop, hold_mult, min_conf, ticker)
+    # 科技股：额外要求价格站上200日均线（200MA动量过滤）
+    # 商品类保持纯HMM驱动，科技股在HMM看多的基础上叠加200MA门槛
+    if ticker in TECH_TICKERS:
+        ma200_gate = (df["Close"] > df["ema200"]).fillna(False)
+        # 用 is_bull 和 200MA gate 的交集更新 is_bull
+        df["is_bull"] = df["is_bull"] & ma200_gate
+
+    # 财报日过滤（股票类资产）
+    _earn_dates   = fetch_earnings_dates(ticker)
+    _earn_blackout = earnings_blackout_mask(df.index, _earn_dates) if len(_earn_dates) > 0 else None
+
+    equity_curve, trades = _simulate(df, is_daily, stop, hold_mult, min_conf, ticker,
+                                     earnings_blackout=_earn_blackout)
     df["equity"] = equity_curve
 
     metrics = _compute_metrics(df, trades, ticker, is_daily)
