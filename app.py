@@ -589,7 +589,7 @@ def monthly_heatmap_tabbed(monthly_df: pd.DataFrame) -> None:
                                          x=0, xanchor="left"),
                               xaxis=dict(side="top"),
                               yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
 
 
 # ── 4. Regime Return Attribution（每个 HMM 状态的收益归因） ────
@@ -965,7 +965,7 @@ def render_xgb_panel():
             yaxis=dict(gridcolor="rgba(255,255,255,0.05)", tickfont=dict(size=10, color="#94a3b8")),
             showlegend=False, font=dict(color="#94a3b8"),
         )
-        st.plotly_chart(fig_shap, width="stretch")
+        st.plotly_chart(fig_shap, use_container_width=True)
 
     with col_prob:
         st.markdown('<div class="section-header" style="font-size:0.75rem">📊 涨跌概率分布</div>',
@@ -987,7 +987,7 @@ def render_xgb_panel():
             yaxis=dict(gridcolor="rgba(255,255,255,0.05)", tickformat=".0%", range=[0, 1]),
             showlegend=False, font=dict(color="#94a3b8"),
         )
-        st.plotly_chart(fig_prob, width="stretch")
+        st.plotly_chart(fig_prob, use_container_width=True)
 
     st.markdown(
         '<div style="font-size:0.65rem;color:#334155;margin-top:4px">'
@@ -1211,7 +1211,7 @@ def render_asset(ticker: str) -> None:
             _active = (_cur == (ps, pe))
             if st.button(label, key=f"preset_{_safe_t}_{label}",
                          type="primary" if _active else "secondary",
-                         width="stretch"):
+                         use_container_width=True):
                 st.session_state[_slider_key] = (ps, pe)
                 st.rerun()
 
@@ -1253,15 +1253,15 @@ def render_asset(ticker: str) -> None:
 
     # ── K线 + Volume + RSI ──────────────────────────────────
     st.markdown('<div class="section-header">📊 K线图 · Volume · RSI&nbsp;&nbsp;<span style="font-size:0.75rem;color:#475569;font-weight:400">绿=Bull Run · 浅绿=Bull+ · 蓝=Warming Up · 红=Bear</span></div>', unsafe_allow_html=True)
-    st.plotly_chart(candle_chart(_df_slice, _trades_slice, ticker), width="stretch")
+    st.plotly_chart(candle_chart(_df_slice, _trades_slice, ticker), use_container_width=True)
 
     # ── MACD + 信号强度 ──────────────────────────────────────
     st.markdown('<div class="section-header">📉 MACD &amp; 信号强度时序</div>', unsafe_allow_html=True)
-    st.plotly_chart(macd_signal_chart(_df_slice, min_conf), width="stretch")
+    st.plotly_chart(macd_signal_chart(_df_slice, min_conf), use_container_width=True)
 
     # ── Stochastic + CCI ─────────────────────────────────────
     st.markdown('<div class="section-header">🔀 随机震荡指标 &amp; CCI</div>', unsafe_allow_html=True)
-    st.plotly_chart(stoch_cci_chart(_df_slice), width="stretch")
+    st.plotly_chart(stoch_cci_chart(_df_slice), use_container_width=True)
 
     # ── 绩效指标 Row 1 ────────────────────────────────────────
     st.markdown('<div class="section-header">📈 回测绩效</div>', unsafe_allow_html=True)
@@ -1459,7 +1459,7 @@ def render_asset(ticker: str) -> None:
             "交易笔数": str(_n_trades),
         })
     if _strat_rows:
-        st.dataframe(pd.DataFrame(_strat_rows), width="stretch", hide_index=True)
+        st.dataframe(pd.DataFrame(_strat_rows), use_container_width=True, hide_index=True)
 
     # ── 资金曲线 + 回撤（使用已切片的 _df_slice）────────────────
     st.markdown('<div class="section-header">💰 资金曲线 vs 买入持有 vs SPY</div>', unsafe_allow_html=True)
@@ -1472,19 +1472,19 @@ def render_asset(ticker: str) -> None:
     _key_map = {"A · HMM信号投票": "equity", "B · Trailing Stop": "equity_b",
                 "C · EMA趋势跟踪": "equity_c", "D · HMM+布林带": "equity_d"}
     _best_eq_key = _key_map.get(best_name, "equity")
-    st.plotly_chart(equity_chart(_df_slice, _res_eq, best_key=_best_eq_key), width="stretch")
+    st.plotly_chart(equity_chart(_df_slice, _res_eq, best_key=_best_eq_key), use_container_width=True)
 
     # ── 滚动夏普 ─────────────────────────────────────────────
     st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
-    st.plotly_chart(rolling_sharpe_chart(_df_slice, is_daily), width="stretch")
+    st.plotly_chart(rolling_sharpe_chart(_df_slice, is_daily), use_container_width=True)
 
     # ── Relative Alpha Curve ──────────────────────────────────
     st.markdown('<div class="section-header">📐 相对 Alpha 曲线（策略净值 / B&H 净值）</div>', unsafe_allow_html=True)
-    st.plotly_chart(relative_alpha_chart(_df_slice), width="stretch")
+    st.plotly_chart(relative_alpha_chart(_df_slice), use_container_width=True)
 
     # ── Underwater Plot ───────────────────────────────────────
     st.markdown('<div class="section-header">🌊 Underwater 回撤曲线</div>', unsafe_allow_html=True)
-    st.plotly_chart(underwater_chart(_df_slice), width="stretch")
+    st.plotly_chart(underwater_chart(_df_slice), use_container_width=True)
 
     # ── 月度热力图（含 BH / Alpha 标签） + 状态分布 ──────────
     col_heat, col_dist = st.columns([3, 2], gap="medium")
@@ -1493,31 +1493,31 @@ def render_asset(ticker: str) -> None:
         monthly_heatmap_tabbed(metrics["monthly_df"])
     with col_dist:
         st.markdown('<div class="section-header">🧩 HMM 状态分布</div>', unsafe_allow_html=True)
-        st.plotly_chart(regime_bar(_df_slice), width="stretch")
+        st.plotly_chart(regime_bar(_df_slice), use_container_width=True)
 
     # ── 宏观特征可视化 ────────────────────────────────────────
     from data_loader import MACRO_TABLES
     _macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
     if _macro_cols:
         st.markdown('<div class="section-header">🌐 宏观指标时序（z-score · 背景色=Regime）</div>', unsafe_allow_html=True)
-        st.plotly_chart(macro_timeseries_chart(df), width="stretch")
+        st.plotly_chart(macro_timeseries_chart(df), use_container_width=True)
         st.markdown('<div class="section-header">📊 各 Regime 宏观特征均值对比</div>', unsafe_allow_html=True)
-        st.plotly_chart(macro_by_regime_chart(df), width="stretch")
+        st.plotly_chart(macro_by_regime_chart(df), use_container_width=True)
 
     # ── 各状态收益箱线图 ─────────────────────────────────────
     st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
-    st.plotly_chart(regime_return_chart(_df_slice, n_states), width="stretch")
+    st.plotly_chart(regime_return_chart(_df_slice, n_states), use_container_width=True)
 
     # ── Regime Return Attribution ─────────────────────────────
     if _trades_slice:
         st.markdown('<div class="section-header">🔍 Regime 交易归因（各状态入场盈亏 & 胜率）</div>', unsafe_allow_html=True)
-        st.plotly_chart(regime_attribution_chart(_df_slice, _trades_slice), width="stretch")
+        st.plotly_chart(regime_attribution_chart(_df_slice, _trades_slice), use_container_width=True)
 
     # ── Exit Reason Breakdown ─────────────────────────────────
     exit_attr = metrics.get("exit_attribution", {})
     if exit_attr:
         st.markdown('<div class="section-header">🚪 出场原因归因</div>', unsafe_allow_html=True)
-        st.plotly_chart(exit_attribution_chart(exit_attr), width="stretch")
+        st.plotly_chart(exit_attribution_chart(exit_attr), use_container_width=True)
 
     # ── Top Trade Contribution ────────────────────────────────
     if trades:
@@ -1530,17 +1530,17 @@ def render_asset(ticker: str) -> None:
             f'Top 5 交易贡献度 <b style="color:#ffd740">{top5_s}</b> &nbsp;·&nbsp; '
             f'Top 10 交易贡献度 <b style="color:#ffd740">{top10_s}</b></div>',
             unsafe_allow_html=True)
-        st.plotly_chart(top_trade_chart(trades), width="stretch")
+        st.plotly_chart(top_trade_chart(trades), use_container_width=True)
 
     # ── 交易分析（单笔盈亏）+ 持仓时长分布 ────────────────────
     if trades:
         c_pnl, c_hold = st.columns([1.4, 1], gap="medium")
         with c_pnl:
             st.markdown('<div class="section-header">🎯 单笔盈亏分析</div>', unsafe_allow_html=True)
-            st.plotly_chart(trade_analytics_chart(trades), width="stretch")
+            st.plotly_chart(trade_analytics_chart(trades), use_container_width=True)
         with c_hold:
             st.markdown('<div class="section-header">⏱ 持仓时长分布</div>', unsafe_allow_html=True)
-            st.plotly_chart(hold_duration_chart(trades, is_daily), width="stretch")
+            st.plotly_chart(hold_duration_chart(trades, is_daily), use_container_width=True)
 
     # ── 交易统计 + 风控参数 ───────────────────────────────────
     col_stats, col_risk = st.columns([1, 1], gap="medium")
@@ -1636,7 +1636,7 @@ def render_asset(ticker: str) -> None:
         tdf_show = tdf_show[["entry_time","exit_time","entry_regime","entry_price","exit_price",
                               "pos_size_pct","pnl","return_pct","hold_bars","exit_reason"]]
         tdf_show.columns = ["入场时间","出场时间","入场Regime","入场价","出场价","仓位","盈亏","收益率","持仓bar","出场原因"]
-        st.dataframe(tdf_show, width="stretch", hide_index=True)
+        st.dataframe(tdf_show, use_container_width=True, hide_index=True)
 
     # ── XGBoost 多因子预测（仅 Gold）────────────────────────────
     if ticker == "GC=F":
@@ -2002,7 +2002,7 @@ def render_portfolio_tab() -> None:
     _port_layout["yaxis"] = dict(gridcolor=GRID_COLOR, tickprefix="$")
     _port_layout["xaxis"] = dict(gridcolor=GRID_COLOR)
     fig_port.update_layout(**_port_layout)
-    st.plotly_chart(fig_port, width="stretch")
+    st.plotly_chart(fig_port, use_container_width=True)
 
     # ── 各品种绩效表 ─────────────────────────────────────────
     st.markdown('<div class="section-header">📋 各品种绩效 vs 组合</div>', unsafe_allow_html=True)
@@ -2038,7 +2038,7 @@ def render_portfolio_tab() -> None:
         "Sharpe": f"{psh_v:.2f}", "Calmar": f"{pcal_v:.2f}",
         "MaxDD": f"{pmdd_v:.1f}%", "年化波动": "—", "动态权重": "—", "波动率平价": "100%",
     })
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     # 摩擦成本说明
     st.markdown('<div class="section-header">💸 摩擦成本 & 保证金参数</div>', unsafe_allow_html=True)
@@ -2063,7 +2063,7 @@ def render_portfolio_tab() -> None:
                 "MarginCall 次数（10年）": "0",
                 "结论": "Stop先触发"
             })
-        st.dataframe(pd.DataFrame(rows_m), width="stretch", hide_index=True)
+        st.dataframe(pd.DataFrame(rows_m), use_container_width=True, hide_index=True)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -2096,7 +2096,7 @@ def main() -> None:
     with hc2:
         st.write("")
         st.write("")
-        if st.button("🔄 刷新", type="primary", width="stretch"):
+        if st.button("🔄 刷新", type="primary", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
 
