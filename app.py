@@ -2101,13 +2101,34 @@ def main() -> None:
             st.rerun()
 
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-    tabs = st.tabs([
+
+    # 懒加载导航：只渲染当前选中的页面，避免 WebSocket 帧过大
+    NAV_OPTIONS = [
         "📡  今日信号", "🌐  组合",
         "🍎  AAPL", "🥇  Gold", "🥈  Silver", "🛢  Oil",
         "🟩  NVDA", "🔵  META", "📦  AMZN",
         "🔍  GOOG", "🪟  MSFT", "⚡  TSLA",
         "🪶  HOOD", "📊  SPY",  "🇨🇳  FXI", "🛡  PLTR",
-    ])
+    ]
+    NAV_TICKER = {
+        "🍎  AAPL": "AAPL", "🥇  Gold": "GC=F", "🥈  Silver": "SI=F",
+        "🛢  Oil":  "CL=F", "🟩  NVDA": "NVDA", "🔵  META":  "META",
+        "📦  AMZN": "AMZN", "🔍  GOOG": "GOOG", "🪟  MSFT":  "MSFT",
+        "⚡  TSLA": "TSLA", "🪶  HOOD": "HOOD", "📊  SPY":   "SPY",
+        "🇨🇳  FXI": "FXI",  "🛡  PLTR": "PLTR",
+    }
+
+    _active_tab = st.radio(
+        "导航", NAV_OPTIONS,
+        index=st.session_state.get("_nav_idx", 0),
+        horizontal=True,
+        label_visibility="collapsed",
+        key="_nav_radio",
+    )
+    st.session_state["_nav_idx"] = NAV_OPTIONS.index(_active_tab)
+
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
     def _safe_render(fn, *args):
         try:
             fn(*args)
@@ -2116,22 +2137,12 @@ def main() -> None:
             st.error(f"渲染错误：{_e}")
             st.code(traceback.format_exc(), language="python")
 
-    with tabs[0]:  _safe_render(render_signals_tab)
-    with tabs[1]:  _safe_render(render_portfolio_tab)
-    with tabs[2]:  _safe_render(render_asset, "AAPL")
-    with tabs[3]:  _safe_render(render_asset, "GC=F")
-    with tabs[4]:  _safe_render(render_asset, "SI=F")
-    with tabs[5]:  _safe_render(render_asset, "CL=F")
-    with tabs[6]:  _safe_render(render_asset, "NVDA")
-    with tabs[7]:  _safe_render(render_asset, "META")
-    with tabs[8]:  _safe_render(render_asset, "AMZN")
-    with tabs[9]:  _safe_render(render_asset, "GOOG")
-    with tabs[10]: _safe_render(render_asset, "MSFT")
-    with tabs[11]: _safe_render(render_asset, "TSLA")
-    with tabs[12]: _safe_render(render_asset, "HOOD")
-    with tabs[13]: _safe_render(render_asset, "SPY")
-    with tabs[14]: _safe_render(render_asset, "FXI")
-    with tabs[15]: _safe_render(render_asset, "PLTR")
+    if _active_tab == "📡  今日信号":
+        _safe_render(render_signals_tab)
+    elif _active_tab == "🌐  组合":
+        _safe_render(render_portfolio_tab)
+    elif _active_tab in NAV_TICKER:
+        _safe_render(render_asset, NAV_TICKER[_active_tab])
 
     st.markdown(
         "<div style='text-align:center;color:#1e293b;font-size:0.7rem;margin-top:2rem'>"
