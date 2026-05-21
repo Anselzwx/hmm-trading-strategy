@@ -992,6 +992,7 @@ def render_xgb_panel():
 # 单资产面板
 # ──────────────────────────────────────────────────────────────
 
+@st.fragment
 def render_asset(ticker: str) -> None:
     with st.spinner(f"拉取数据 & Walk-Forward 训练 HMM…"):
         try:
@@ -1691,6 +1692,7 @@ def _action_badge(action: str) -> str:
             f'letter-spacing:.3px">{action}</span>')
 
 
+@st.fragment
 def render_signals_tab() -> None:
     data = _load_latest_signal()
     if data is None:
@@ -1865,6 +1867,7 @@ def portfolio_equity_chart(eq_dict: dict) -> go.Figure:
     return fig
 
 
+@st.fragment
 def render_portfolio_tab() -> None:
     ALL_TICKERS = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
 
