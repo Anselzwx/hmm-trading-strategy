@@ -553,36 +553,43 @@ def underwater_chart(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-# ── 3. 月度热力图（Strategy / BH / Alpha 单图，selectbox 切换） ─
-def monthly_heatmap_tabbed(monthly_df: pd.DataFrame, key_suffix: str = "") -> None:
+# ── 3. 月度热力图（Strategy / BH / Alpha 三选项） ─────────────
+def monthly_heatmap_tabbed(monthly_df: pd.DataFrame) -> None:
     MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-    col_key = "ret"  # default: strategy returns
-    title   = "策略月度收益"
-    years = sorted(monthly_df["year"].unique())
-    z, text = [], []
-    for yr in years:
-        row_z, row_t = [], []
-        for mo in range(1, 13):
-            val = monthly_df[(monthly_df["year"] == yr) & (monthly_df["month"] == mo)][col_key]
-            if len(val):
-                v = float(val.iloc[0]); row_z.append(v); row_t.append(f"{v:+.1f}%")
-            else:
-                row_z.append(None); row_t.append("")
-        z.append(row_z); text.append(row_t)
-    fig = go.Figure(go.Heatmap(
-        z=z, x=MONTHS, y=[str(y) for y in years],
-        text=text, texttemplate="%{text}",
-        colorscale=[[0,"#7f1d1d"],[0.5,"#1e2130"],[1,"#14532d"]],
-        zmid=0, showscale=True,
-        colorbar=dict(ticksuffix="%", thickness=12, len=0.8,
-                      tickfont=dict(size=10, color="#64748b")),
-        hoverongaps=False))
-    fig.update_layout(**_base_layout(height=max(160, len(years)*46+60)),
-                      title=dict(text=title, font=dict(size=12, color="#94a3b8"),
-                                 x=0, xanchor="left"),
-                      xaxis=dict(side="top"),
-                      yaxis=dict(autorange="reversed"))
-    st.plotly_chart(fig, use_container_width=True)
+    tab_s, tab_b, tab_a = st.tabs(["Strategy", "Buy & Hold", "Alpha"])
+    for tab, col_key, title in [
+        (tab_s, "ret",       "策略月度收益"),
+        (tab_b, "bh_ret",    "B&H 月度收益"),
+        (tab_a, "alpha_ret", "月度 Alpha（策略 - B&H）"),
+    ]:
+        with tab:
+            years = sorted(monthly_df["year"].unique())
+            z, text = [], []
+            for yr in years:
+                row_z, row_t = [], []
+                for mo in range(1, 13):
+                    val = monthly_df[
+                        (monthly_df["year"] == yr) & (monthly_df["month"] == mo)
+                    ][col_key]
+                    if len(val):
+                        v = float(val.iloc[0]); row_z.append(v); row_t.append(f"{v:+.1f}%")
+                    else:
+                        row_z.append(None); row_t.append("")
+                z.append(row_z); text.append(row_t)
+            fig = go.Figure(go.Heatmap(
+                z=z, x=MONTHS, y=[str(y) for y in years],
+                text=text, texttemplate="%{text}",
+                colorscale=[[0,"#7f1d1d"],[0.5,"#1e2130"],[1,"#14532d"]],
+                zmid=0, showscale=True,
+                colorbar=dict(ticksuffix="%", thickness=12, len=0.8,
+                              tickfont=dict(size=10, color="#64748b")),
+                hoverongaps=False))
+            fig.update_layout(**_base_layout(height=max(160, len(years)*46+60)),
+                              title=dict(text=title, font=dict(size=12, color="#94a3b8"),
+                                         x=0, xanchor="left"),
+                              xaxis=dict(side="top"),
+                              yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig, use_container_width=True)
 
 
 # ── 4. Regime Return Attribution（每个 HMM 状态的收益归因） ────
@@ -992,7 +999,6 @@ def render_xgb_panel():
 # 单资产面板
 # ──────────────────────────────────────────────────────────────
 
-@st.fragment
 def render_asset(ticker: str) -> None:
     with st.spinner(f"拉取数据 & Walk-Forward 训练 HMM…"):
         try:
@@ -1163,76 +1169,69 @@ def render_asset(ticker: str) -> None:
                 <span style="color:{'#00e676' if n>=min_conf else '#ff5252'}">
                     {'✅ 满足入场条件' if n >= min_conf else f'⚠️ 还差 {min_conf - n} 条'}
                 </span>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 8px;margin-top:4px">
-                <div>
-                    <div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">核心信号</div>
-                    {"".join(_sig_row(nm, ok, vl) for nm, ok, vl in core_checks)}
-                </div>
-                <div>
-                    <div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">确认信号</div>
-                    {"".join(_sig_row(nm, ok, vl) for nm, ok, vl in conf_checks)}
-                </div>
-            </div>
             </div>""", unsafe_allow_html=True)
+        col_a, col_b = st.columns(2)
+        col_a.markdown(
+            '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">核心信号</div>' +
+            "".join(_sig_row(nm, ok, vl) for nm, ok, vl in core_checks), unsafe_allow_html=True)
+        col_b.markdown(
+            '<div style="font-size:0.62rem;color:#475569;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">确认信号</div>' +
+            "".join(_sig_row(nm, ok, vl) for nm, ok, vl in conf_checks), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
 
-    # ── 时间段选择器（预设快捷键 + 双端滑块）────────────────────
+    # ── 时间段选择器（预设 + 自定义）────────────────────────────
     st.markdown('<div class="section-header">📅 时间区间筛选</div>', unsafe_allow_html=True)
 
     _date_min = df.index.min().date()
     _date_max = df.index.max().date()
-    import datetime as _dt
 
     PRESETS = {
-        "全区间":       (_date_min,                                                    _date_max),
-        "2008危机":     (max(_date_min, _dt.date(2008,1,1)),  _dt.date(2009,6,30)),
-        "2010-2015":   (max(_date_min, _dt.date(2010,1,1)),  _dt.date(2015,12,31)),
-        "2018熊市":    (max(_date_min, _dt.date(2018,1,1)),  _dt.date(2018,12,31)),
-        "2020疫情":    (max(_date_min, _dt.date(2020,1,1)),  _dt.date(2020,12,31)),
-        "2022加息":    (max(_date_min, _dt.date(2022,1,1)),  _dt.date(2022,12,31)),
-        "近3年":       (max(_date_min, _date_max.replace(year=_date_max.year-3)),      _date_max),
-        "近1年":       (max(_date_min, _date_max.replace(year=_date_max.year-1)),      _date_max),
+        "全区间":       (_date_min,                            _date_max),
+        "2008金融危机": (max(_date_min, __import__('datetime').date(2008,1,1)),  __import__('datetime').date(2009,6,30)),
+        "2010-2015":   (max(_date_min, __import__('datetime').date(2010,1,1)),  __import__('datetime').date(2015,12,31)),
+        "2018熊市":    (max(_date_min, __import__('datetime').date(2018,1,1)),  __import__('datetime').date(2018,12,31)),
+        "2020疫情":    (max(_date_min, __import__('datetime').date(2020,1,1)),  __import__('datetime').date(2020,12,31)),
+        "2022加息":    (max(_date_min, __import__('datetime').date(2022,1,1)),  __import__('datetime').date(2022,12,31)),
+        "近3年":       (max(_date_min, (_date_max.replace(year=_date_max.year-3))), _date_max),
+        "近1年":       (max(_date_min, (_date_max.replace(year=_date_max.year-1))), _date_max),
     }
 
-    _safe_t     = ticker.replace("=", "_").replace("/", "_")
-    _slider_key = f"slider_{_safe_t}"
+    _preset_cols = st.columns(len(PRESETS), gap="small")
+    _safe_t      = ticker.replace("=", "_").replace("/", "_")
+    _preset_key  = f"preset_{_safe_t}"
+    _start_key   = f"eq_start_{_safe_t}"
+    _end_key     = f"eq_end_{_safe_t}"
 
-    # 预设快捷选择（selectbox 替代多列按钮，节省 delta 帧）
-    _preset_labels = list(PRESETS.keys())
-    _cur_range = st.session_state.get(_slider_key, (_date_min, _date_max))
-    _cur_preset_idx = 0
-    for _pi, (_pl, (_ps, _pe)) in enumerate(PRESETS.items()):
-        if _cur_range == (_ps, _pe):
-            _cur_preset_idx = _pi
-            break
-    _sel_preset = st.selectbox("快捷时间段", _preset_labels,
-                               index=_cur_preset_idx,
-                               key=f"preset_sel_{_safe_t}",
-                               label_visibility="collapsed")
-    _ps_start, _ps_end = PRESETS[_sel_preset]
-    if st.session_state.get(_slider_key, (_date_min, _date_max)) != (_ps_start, _ps_end):
-        if _sel_preset != "全区间" or st.session_state.get(_slider_key) is None:
-            st.session_state[_slider_key] = (_ps_start, _ps_end)
+    # 初始化 session_state
+    if _preset_key not in st.session_state:
+        st.session_state[_preset_key] = "全区间"
+    if _start_key not in st.session_state:
+        st.session_state[_start_key] = _date_min
+    if _end_key not in st.session_state:
+        st.session_state[_end_key] = _date_max
 
-    # 双端日期滑块（拖动即时联动）
-    _slider_val = st.session_state.get(_slider_key, (_date_min, _date_max))
-    # 确保值在有效范围内
-    _slider_val = (
-        max(_date_min, min(_slider_val[0], _date_max)),
-        max(_date_min, min(_slider_val[1], _date_max)),
-    )
-    _range = st.slider(
-        "拖动选择时间范围",
-        min_value=_date_min,
-        max_value=_date_max,
-        value=_slider_val,
-        format="YYYY-MM-DD",
-        key=_slider_key,
-        label_visibility="collapsed",
-    )
-    _start, _end = _range
-    st.caption(f"📅 {_start}  →  {_end}　　共 {(_end - _start).days} 天")
+    for i, (label, (ps, pe)) in enumerate(PRESETS.items()):
+        with _preset_cols[i]:
+            _active = st.session_state[_preset_key] == label
+            if st.button(label, key=f"preset_{ticker}_{label}",
+                         type="primary" if _active else "secondary",
+                         use_container_width=True):
+                st.session_state[_preset_key] = label
+                st.session_state[_start_key]  = ps
+                st.session_state[_end_key]    = pe
+                st.rerun()
+
+    _pcol_l, _pcol_r = st.columns(2, gap="small")
+    with _pcol_l:
+        _start = st.date_input("起始日期",
+                               min_value=_date_min, max_value=_date_max,
+                               key=_start_key)
+    with _pcol_r:
+        _end = st.date_input("结束日期",
+                             min_value=_date_min, max_value=_date_max,
+                             key=_end_key)
 
     if _start >= _end:
         st.warning("起始日期必须早于结束日期")
@@ -1285,133 +1284,65 @@ def render_asset(ticker: str) -> None:
             return "—"
         return f"{v:+.1f}%"
 
-    # 16个指标卡合并为一个 st.markdown，减少 WebSocket 帧数
-    rc  = "green" if metrics["total_return_pct"] > 0 else "red"
-    ac  = "green" if metrics["alpha_pct"] > 0 else "red"
-    _sh = metrics["sharpe"]; _ca = metrics["calmar"]; _so = metrics["sortino"]
+    cols = st.columns(4, gap="small")
+    rc = "green" if metrics["total_return_pct"] > 0 else "red"
+    ac = "green" if metrics["alpha_pct"] > 0 else "red"
+    with cols[0]: st.markdown(_metric("总收益",      f"{metrics['total_return_pct']:+.1f}%",
+                                                      f"年化 {_fmt_ann(metrics['ann_return_pct'])}", rc), unsafe_allow_html=True)
+    with cols[1]: st.markdown(_metric("vs B&H Alpha", f"{metrics['alpha_pct']:+.1f}%",
+                                                      f"B&H {metrics['bh_return_pct']:+.1f}%", ac), unsafe_allow_html=True)
+    with cols[2]: st.markdown(_metric("最大回撤",    f"{metrics['max_drawdown_pct']:.1f}%",
+                                                      "峰值→谷值", "red"), unsafe_allow_html=True)
+    with cols[3]: st.markdown(_metric("最终资本",    f"${metrics['final_capital']:,.0f}",
+                                                      f"起始 ${STARTING_CAP:,.0f} · {LEVERAGE}×", "yellow"), unsafe_allow_html=True)
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
+    cols2 = st.columns(4, gap="small")
+    _sh = metrics["sharpe"]; _ca = metrics["calmar"]
     sh_c = "green" if _sh > 1 else "yellow" if _sh > 0 else "red"
     ca_c = "green" if _ca > 1 else "yellow" if _ca > 0 else "red"
-    so_c = "green" if _so > 1 else "yellow" if _so > 0 else "red"
-    pf_c = "green" if metrics["profit_factor"] > 1.5 else "yellow" if metrics["profit_factor"] > 1 else "red"
-    ex_c = "green" if metrics["expectancy"] > 0 else "red"
-    cl_c = "green" if metrics["max_consec_loss"] <= 2 else "yellow" if metrics["max_consec_loss"] <= 4 else "red"
-    sk_c = "green" if metrics["skewness"] > 0 else "yellow"
     sa_v = f"{metrics['spy_alpha_pct']:+.1f}%" if metrics["spy_alpha_pct"] is not None else "N/A"
     sa_s = f"SPY {metrics['spy_bh_pct']:+.1f}%" if metrics["spy_bh_pct"] is not None else ""
     sa_c = "green" if (metrics["spy_alpha_pct"] or 0) > 0 else "red"
+    with cols2[0]: st.markdown(_metric("夏普比率",   _fmt_ratio(_sh),
+                                                      f"年化波动 {metrics['ann_vol_pct']:.1f}%", sh_c), unsafe_allow_html=True)
+    with cols2[1]: st.markdown(_metric("卡玛比率",   _fmt_ratio(_ca),
+                                                      "年化收益 / 最大回撤", ca_c), unsafe_allow_html=True)
+    with cols2[2]: st.markdown(_metric("月度胜率",   f"{metrics['monthly_win_pct']:.1f}%",
+                                                      f"交易胜率 {metrics['win_rate_pct']:.1f}%", "blue"), unsafe_allow_html=True)
+    with cols2[3]: st.markdown(_metric("vs SPY Alpha", sa_v, sa_s, sa_c), unsafe_allow_html=True)
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
+    # ── 绩效指标 Row 3：新增高级指标 ─────────────────────────
+    cols3 = st.columns(4, gap="small")
+    _so = metrics["sortino"]
+    so_c  = "green" if _so > 1 else "yellow" if _so > 0 else "red"
+    pf_c  = "green" if metrics["profit_factor"] > 1.5 else "yellow" if metrics["profit_factor"] > 1 else "red"
+    ex_c  = "green" if metrics["expectancy"] > 0 else "red"
+    tr_c  = "green" if metrics["tail_ratio"] > 1 else "yellow"
+    with cols3[0]: st.markdown(_metric("Sortino 比率",  _fmt_ratio(_so),
+                                                         f"下行波动率标准化", so_c), unsafe_allow_html=True)
+    with cols3[1]: st.markdown(_metric("Profit Factor", f"{metrics['profit_factor']:.2f}",
+                                                         f"总盈利 / 总亏损", pf_c), unsafe_allow_html=True)
+    with cols3[2]: st.markdown(_metric("期望值/笔",     f"${metrics['expectancy']:+.0f}",
+                                                         f"盈亏比 {metrics['rr_ratio']:.2f}×", ex_c), unsafe_allow_html=True)
+    with cols3[3]: st.markdown(_metric("Tail Ratio",    f"{metrics['tail_ratio']:.2f}",
+                                                         "P95收益 / P5亏损", tr_c), unsafe_allow_html=True)
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
+    cols4 = st.columns(4, gap="small")
+    cl_c  = "green" if metrics["max_consec_loss"] <= 2 else "yellow" if metrics["max_consec_loss"] <= 4 else "red"
+    sk_c  = "green" if metrics["skewness"] > 0 else "yellow"
     rc_label = f"{metrics['max_recovery_bars']}{'日' if is_daily else 'h'}"
-
-    st.markdown(f"""
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
-  {_metric("总收益",        f"{metrics['total_return_pct']:+.1f}%",  f"年化 {_fmt_ann(metrics['ann_return_pct'])}", rc)}
-  {_metric("vs B&H Alpha",  f"{metrics['alpha_pct']:+.1f}%",         f"B&H {metrics['bh_return_pct']:+.1f}%", ac)}
-  {_metric("最大回撤",      f"{metrics['max_drawdown_pct']:.1f}%",   "峰值→谷值", "red")}
-  {_metric("最终资本",      f"${metrics['final_capital']:,.0f}",      f"起始 ${STARTING_CAP:,.0f} · {LEVERAGE}×", "yellow")}
-  {_metric("夏普比率",      _fmt_ratio(_sh),                          f"年化波动 {metrics['ann_vol_pct']:.1f}%", sh_c)}
-  {_metric("卡玛比率",      _fmt_ratio(_ca),                          "年化收益 / 最大回撤", ca_c)}
-  {_metric("月度胜率",      f"{metrics['monthly_win_pct']:.1f}%",    f"交易胜率 {metrics['win_rate_pct']:.1f}%", "blue")}
-  {_metric("vs SPY Alpha",  sa_v,                                      sa_s, sa_c)}
-  {_metric("Sortino 比率",  _fmt_ratio(_so),                          "下行波动率标准化", so_c)}
-  {_metric("Profit Factor", f"{metrics['profit_factor']:.2f}",        "总盈利 / 总亏损", pf_c)}
-  {_metric("期望值/笔",     f"${metrics['expectancy']:+.0f}",         f"盈亏比 {metrics['rr_ratio']:.2f}×", ex_c)}
-  {_metric("Tail Ratio",    f"{metrics['tail_ratio']:.2f}",           "P95收益 / P5亏损", "yellow")}
-  {_metric("最大连续亏损",  f"{metrics['max_consec_loss']} 笔",       "连续止损次数上限", cl_c)}
-  {_metric("平均持仓",      f"{metrics['avg_hold_bars']:.0f} bars",   f"平均仓位 {metrics['avg_pos_size_pct']:.0f}%", "blue")}
-  {_metric("收益偏度",      f"{metrics['skewness']:+.2f}",            f"峰度 {metrics['kurtosis']:.2f}", sk_c)}
-  {_metric("最长回撤修复",  rc_label,                                  "峰值→修复所需时间", "yellow")}
-</div>
-""", unsafe_allow_html=True)
-
-    # ── 异常指标解读框 ────────────────────────────────────────
-    _anomalies = []
-
-    _sharpe_raw  = metrics["sharpe"]
-    _calmar_raw  = metrics["calmar"]
-    _sortino_raw = metrics["sortino"]
-    _dd_raw      = abs(metrics["max_drawdown_pct"])
-    _wr_raw      = metrics["win_rate_pct"]
-    _pf_raw      = metrics["profit_factor"]
-    _nt          = metrics["n_trades"]
-    _ann_raw     = metrics["ann_return_pct"]
-
-    if _sharpe_raw > 10:
-        _anomalies.append((
-            f"夏普比率 {_sharpe_raw:.2f}",
-            "夏普比率极高通常由以下原因造成：① 交易笔数过少（本区间仅 "
-            f"{_nt} 笔），少量高盈利交易会大幅压低收益标准差；"
-            "② 策略长期空仓（持仓时间短），空仓期净值不波动，导致整体波动率偏低；"
-            "③ 回测区间恰好覆盖强势上涨阶段。现实中难以复现，参考意义有限。"
-        ))
-
-    if _calmar_raw > 50:
-        _anomalies.append((
-            f"卡玛比率 {_calmar_raw:.2f}",
-            "卡玛 = 年化收益 / 最大回撤。极高值意味着策略在本区间几乎没有深度回撤（"
-            f"最大回撤仅 {_dd_raw:.1f}%），而年化收益又很高。"
-            "少笔数策略在特定行情下可实现，但样本外大概率无法维持。"
-        ))
-
-    if _sortino_raw > 50:
-        _anomalies.append((
-            f"Sortino 比率 {_sortino_raw:.2f}",
-            "Sortino 只计算下行波动率。当策略大部分时间空仓或单边上涨时，"
-            "下行波动率接近零，导致 Sortino 爆炸性升高，此时该指标失去区分意义。"
-        ))
-
-    if _dd_raw < 3 and _nt >= 5:
-        _anomalies.append((
-            f"最大回撤 {metrics['max_drawdown_pct']:.1f}%",
-            "最大回撤极小（<3%）在多年回测中极为罕见。"
-            "可能原因：① 策略绝大多数时间空仓，仅捕捉少数强势趋势；"
-            "② ATR 止损在大行情中未被触及；"
-            "③ 回测区间没有覆盖完整市场周期。不代表未来不会出现更大回撤。"
-        ))
-
-    if _wr_raw > 85 and _nt >= 5:
-        _anomalies.append((
-            f"交易胜率 {_wr_raw:.1f}%",
-            "胜率极高往往伴随盈亏比下降，或交易笔数极少导致统计不稳定。"
-            f"本区间共 {_nt} 笔交易，样本量{'较少，' if _nt < 20 else ''}需谨慎外推。"
-        ))
-
-    if _pf_raw > 10 and _nt >= 5:
-        _anomalies.append((
-            f"Profit Factor {_pf_raw:.2f}",
-            "Profit Factor > 10 意味着总盈利是总亏损的 10 倍以上，"
-            "在少笔数策略中很常见（1-2 次大亏损被多次小盈利覆盖）。"
-            "笔数越少，该指标越不稳定。"
-        ))
-
-    if _nt < 10:
-        _anomalies.append((
-            f"交易笔数仅 {_nt} 笔",
-            "样本量不足 10 笔时，所有统计指标（胜率、夏普、期望值等）"
-            "的置信区间都非常宽，不具备统计显著性。"
-            "建议扩大回测区间或降低信号门槛以获得更多交易样本。"
-        ))
-
-    if _anomalies:
-        _rows_html = "".join(
-            f"""<div style="margin-bottom:12px;">
-  <div style="font-size:0.82rem;font-weight:700;color:#fbbf24;margin-bottom:3px;">
-    ⚠️ {title}
-  </div>
-  <div style="font-size:0.78rem;color:#94a3b8;line-height:1.6;">{desc}</div>
-</div>"""
-            for title, desc in _anomalies
-        )
-        st.markdown(f"""
-<div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);
-            border-radius:14px;padding:18px 22px;margin-bottom:1.2rem;">
-  <div style="font-size:0.85rem;font-weight:700;color:#fbbf24;margin-bottom:14px;
-              letter-spacing:.3px;">📋 异常指标解读</div>
-  {_rows_html}
-  <div style="font-size:0.72rem;color:#475569;margin-top:10px;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;">
-    以上指标数值偏离常规范围，已列出可能原因供参考。数值本身不代表策略存在问题，
-    需结合交易笔数、回测区间长度和市场环境综合判断。
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    with cols4[0]: st.markdown(_metric("最大连续亏损",  f"{metrics['max_consec_loss']} 笔",
+                                                         "连续止损次数上限", cl_c), unsafe_allow_html=True)
+    with cols4[1]: st.markdown(_metric("平均持仓",      f"{metrics['avg_hold_bars']:.0f} bars",
+                                                         f"平均仓位 {metrics['avg_pos_size_pct']:.0f}%", "blue"), unsafe_allow_html=True)
+    with cols4[2]: st.markdown(_metric("收益偏度",      f"{metrics['skewness']:+.2f}",
+                                                         f"峰度 {metrics['kurtosis']:.2f}", sk_c), unsafe_allow_html=True)
+    with cols4[3]: st.markdown(_metric("最长回撤修复",  rc_label,
+                                                         "峰值→修复所需时间", "yellow"), unsafe_allow_html=True)
+    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
     # ── 四策略对比表 ─────────────────────────────────────────
     st.markdown('<div class="section-header">🏆 四策略对比</div>', unsafe_allow_html=True)
@@ -1451,103 +1382,115 @@ def render_asset(ticker: str) -> None:
     _best_eq_key = _key_map.get(best_name, "equity")
     st.plotly_chart(equity_chart(_df_slice, _res_eq, best_key=_best_eq_key), use_container_width=True)
 
-    # ── 月度热力图 + 状态分布 ─────────────────────────────────
+    # ── 滚动夏普 ─────────────────────────────────────────────
+    st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
+    st.plotly_chart(rolling_sharpe_chart(_df_slice, is_daily), use_container_width=True)
+
+    # ── Relative Alpha Curve ──────────────────────────────────
+    st.markdown('<div class="section-header">📐 相对 Alpha 曲线（策略净值 / B&H 净值）</div>', unsafe_allow_html=True)
+    st.plotly_chart(relative_alpha_chart(_df_slice), use_container_width=True)
+
+    # ── Underwater Plot ───────────────────────────────────────
+    st.markdown('<div class="section-header">🌊 Underwater 回撤曲线</div>', unsafe_allow_html=True)
+    st.plotly_chart(underwater_chart(_df_slice), use_container_width=True)
+
+    # ── 月度热力图（含 BH / Alpha 标签） + 状态分布 ──────────
     col_heat, col_dist = st.columns([3, 2], gap="medium")
     with col_heat:
-        st.markdown('<div class="section-header">🗓 月度收益热力图</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">🗓 月度收益热力图（Strategy / B&H / Alpha）</div>', unsafe_allow_html=True)
         monthly_heatmap_tabbed(metrics["monthly_df"])
     with col_dist:
         st.markdown('<div class="section-header">🧩 HMM 状态分布</div>', unsafe_allow_html=True)
         st.plotly_chart(regime_bar(_df_slice), use_container_width=True)
 
-    # ── 深度分析（折叠，按需展开）────────────────────────────
-    with st.expander("📊 深度分析（滚动夏普 / Alpha / 回撤 / 宏观 / 归因）", expanded=False):
-        st.markdown('<div class="section-header">📐 滚动夏普比率</div>', unsafe_allow_html=True)
-        st.plotly_chart(rolling_sharpe_chart(_df_slice, is_daily), use_container_width=True)
+    # ── 宏观特征可视化 ────────────────────────────────────────
+    from data_loader import MACRO_TABLES
+    _macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
+    if _macro_cols:
+        st.markdown('<div class="section-header">🌐 宏观指标时序（z-score · 背景色=Regime）</div>', unsafe_allow_html=True)
+        st.plotly_chart(macro_timeseries_chart(df), use_container_width=True)
+        st.markdown('<div class="section-header">📊 各 Regime 宏观特征均值对比</div>', unsafe_allow_html=True)
+        st.plotly_chart(macro_by_regime_chart(df), use_container_width=True)
 
-        st.markdown('<div class="section-header">📐 相对 Alpha 曲线</div>', unsafe_allow_html=True)
-        st.plotly_chart(relative_alpha_chart(_df_slice), use_container_width=True)
+    # ── 各状态收益箱线图 ─────────────────────────────────────
+    st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
+    st.plotly_chart(regime_return_chart(_df_slice, n_states), use_container_width=True)
 
-        st.markdown('<div class="section-header">🌊 Underwater 回撤曲线</div>', unsafe_allow_html=True)
-        st.plotly_chart(underwater_chart(_df_slice), use_container_width=True)
+    # ── Regime Return Attribution ─────────────────────────────
+    if _trades_slice:
+        st.markdown('<div class="section-header">🔍 Regime 交易归因（各状态入场盈亏 & 胜率）</div>', unsafe_allow_html=True)
+        st.plotly_chart(regime_attribution_chart(_df_slice, _trades_slice), use_container_width=True)
 
-        from data_loader import MACRO_TABLES
-        _macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
-        if _macro_cols:
-            st.markdown('<div class="section-header">🌐 宏观指标时序</div>', unsafe_allow_html=True)
-            st.plotly_chart(macro_timeseries_chart(df), use_container_width=True)
-            st.markdown('<div class="section-header">📊 各 Regime 宏观特征均值对比</div>', unsafe_allow_html=True)
-            st.plotly_chart(macro_by_regime_chart(df), use_container_width=True)
-
-        st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
-        st.plotly_chart(regime_return_chart(_df_slice, n_states), use_container_width=True)
-
-        if _trades_slice:
-            st.markdown('<div class="section-header">🔍 Regime 交易归因</div>', unsafe_allow_html=True)
-            st.plotly_chart(regime_attribution_chart(_df_slice, _trades_slice), use_container_width=True)
-
-        exit_attr = metrics.get("exit_attribution", {})
-        if exit_attr:
-            st.markdown('<div class="section-header">🚪 出场原因归因</div>', unsafe_allow_html=True)
-            st.plotly_chart(exit_attribution_chart(exit_attr), use_container_width=True)
-
-        if trades:
-            m = metrics
-            top5_s  = f"{m['top5_contrib_pct']:.1f}%" if "top5_contrib_pct" in m else "N/A"
-            top10_s = f"{m['top10_contrib_pct']:.1f}%" if "top10_contrib_pct" in m else "N/A"
-            st.markdown(f'<div class="section-header">🏆 Top Trade 贡献度 &nbsp;<span style="font-size:0.72rem;color:#ffd740">Top5: {top5_s} · Top10: {top10_s}</span></div>', unsafe_allow_html=True)
-            st.plotly_chart(top_trade_chart(trades), use_container_width=True)
-
-            c_pnl, c_hold = st.columns([1.4, 1], gap="medium")
-            with c_pnl:
-                st.markdown('<div class="section-header">🎯 单笔盈亏分析</div>', unsafe_allow_html=True)
-                st.plotly_chart(trade_analytics_chart(trades), use_container_width=True)
-            with c_hold:
-                st.markdown('<div class="section-header">⏱ 持仓时长分布</div>', unsafe_allow_html=True)
-                st.plotly_chart(hold_duration_chart(trades, is_daily), use_container_width=True)
-
+    # ── Exit Reason Breakdown ─────────────────────────────────
     exit_attr = metrics.get("exit_attribution", {})
+    if exit_attr:
+        st.markdown('<div class="section-header">🚪 出场原因归因</div>', unsafe_allow_html=True)
+        st.plotly_chart(exit_attribution_chart(exit_attr), use_container_width=True)
 
-    # ── 交易统计 + 风控参数（单 markdown，避免 columns 帧）────────
-    tdf_s = pd.DataFrame(trades) if trades else pd.DataFrame()
-    best_t  = tdf_s["pnl"].max() if len(tdf_s) else 0
-    worst_t = tdf_s["pnl"].min() if len(tdf_s) else 0
-    stats = [
-        ("总笔数",       f"{metrics['n_trades']}"),
-        ("盈亏比 (R:R)", f"{metrics['rr_ratio']:.2f}"),
-        ("平均盈利",     f"${metrics['avg_win']:+,.0f}"),
-        ("平均亏损",     f"${metrics['avg_loss']:+,.0f}"),
-        ("最优单笔",     f"${best_t:+,.0f}"),
-        ("最差单笔",     f"${worst_t:+,.0f}"),
-        ("平均仓位",     f"{metrics['avg_pos_size_pct']:.0f}%"),
-    ]
-    cooldown_str = "2 日" if is_daily else "48 小时"
-    max_hold_str = f"{int(60 * res.get('hold_mult', 1.0))} 日" if is_daily else f"{int(24*30 * res.get('hold_mult', 1.0))} 小时"
-    risk_items = [
-        ("HMM 状态数",      f"{n_states} States"),
-        ("入场状态数",      f"Top {bull_top}"),
-        ("信号阈值",        f"{min_conf} / 14"),
-        ("固定止损",        f"{stop*100:.0f}%（触价退出）"),
-        ("Regime Filter",   f"诊断层 · ADX>{adx_thresh} + EMA50↑ + EMA50>EMA200"),
-        ("杠杆",            f"固定 {LEVERAGE}×"),
-        ("冷静期",          cooldown_str),
-        ("最大持仓",        max_hold_str),
-        ("HMM 训练",        "Walk-Forward 滚动"),
-        ("仓位管理",        "信号强度线性 40%→100%"),
-    ]
-    _stats_html  = "".join(f'<div class="sig-row"><span class="sig-name">{k}</span><span class="sig-val">{v}</span></div>' for k, v in stats)
-    _risk_html   = "".join(f'<div class="sig-row"><span class="sig-name">{k}</span><span class="sig-val">{v}</span></div>' for k, v in risk_items)
-    st.markdown(f"""
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:1rem">
-  <div>
-    <div class="section-header">📋 交易统计</div>
-    {_stats_html}
-  </div>
-  <div>
-    <div class="section-header">🛡 风控参数</div>
-    {_risk_html}
-  </div>
-</div>""", unsafe_allow_html=True)
+    # ── Top Trade Contribution ────────────────────────────────
+    if trades:
+        st.markdown('<div class="section-header">🏆 Top Trade 贡献度</div>', unsafe_allow_html=True)
+        m = metrics
+        top5_s  = f"{m['top5_contrib_pct']:.1f}%" if "top5_contrib_pct" in m else "N/A"
+        top10_s = f"{m['top10_contrib_pct']:.1f}%" if "top10_contrib_pct" in m else "N/A"
+        st.markdown(
+            f'<div style="font-size:0.75rem;color:#94a3b8;margin-bottom:4px">'
+            f'Top 5 交易贡献度 <b style="color:#ffd740">{top5_s}</b> &nbsp;·&nbsp; '
+            f'Top 10 交易贡献度 <b style="color:#ffd740">{top10_s}</b></div>',
+            unsafe_allow_html=True)
+        st.plotly_chart(top_trade_chart(trades), use_container_width=True)
+
+    # ── 交易分析（单笔盈亏）+ 持仓时长分布 ────────────────────
+    if trades:
+        c_pnl, c_hold = st.columns([1.4, 1], gap="medium")
+        with c_pnl:
+            st.markdown('<div class="section-header">🎯 单笔盈亏分析</div>', unsafe_allow_html=True)
+            st.plotly_chart(trade_analytics_chart(trades), use_container_width=True)
+        with c_hold:
+            st.markdown('<div class="section-header">⏱ 持仓时长分布</div>', unsafe_allow_html=True)
+            st.plotly_chart(hold_duration_chart(trades, is_daily), use_container_width=True)
+
+    # ── 交易统计 + 风控参数 ───────────────────────────────────
+    col_stats, col_risk = st.columns([1, 1], gap="medium")
+    with col_stats:
+        st.markdown('<div class="section-header">📋 交易统计</div>', unsafe_allow_html=True)
+        tdf_s = pd.DataFrame(trades) if trades else pd.DataFrame()
+        best_t  = tdf_s["pnl"].max() if len(tdf_s) else 0
+        worst_t = tdf_s["pnl"].min() if len(tdf_s) else 0
+        stats = [
+            ("总笔数",       f"{metrics['n_trades']}"),
+            ("盈亏比 (R:R)", f"{metrics['rr_ratio']:.2f}"),
+            ("平均盈利",     f"${metrics['avg_win']:+,.0f}"),
+            ("平均亏损",     f"${metrics['avg_loss']:+,.0f}"),
+            ("最优单笔",     f"${best_t:+,.0f}"),
+            ("最差单笔",     f"${worst_t:+,.0f}"),
+            ("平均仓位",     f"{metrics['avg_pos_size_pct']:.0f}%"),
+        ]
+        st.markdown("".join(
+            f'<div class="sig-row"><span class="sig-name">{k}</span>'
+            f'<span class="sig-val">{v}</span></div>' for k, v in stats
+        ), unsafe_allow_html=True)
+
+    with col_risk:
+        st.markdown('<div class="section-header">🛡 风控参数</div>', unsafe_allow_html=True)
+        cooldown_str = "2 日" if is_daily else "48 小时"
+        max_hold_str = f"{int(60 * res.get('hold_mult', 1.0))} 日" if is_daily else f"{int(24*30 * res.get('hold_mult', 1.0))} 小时"
+        risk_items = [
+            ("HMM 状态数",      f"{n_states} States"),
+            ("入场状态数",      f"Top {bull_top}"),
+            ("信号阈值",        f"{min_conf} / 14"),
+            ("固定止损",        f"{stop*100:.0f}%（触价退出）"),
+            ("Regime Filter",   f"诊断层 · ADX>{adx_thresh} + EMA50↑ + EMA50>EMA200"),
+            ("杠杆",            f"固定 {LEVERAGE}×"),
+            ("冷静期",          cooldown_str),
+            ("最大持仓",        max_hold_str),
+            ("HMM 训练",        "Walk-Forward 滚动"),
+            ("仓位管理",        "信号强度线性 40%→100%"),
+        ]
+        st.markdown("".join(
+            f'<div class="sig-row"><span class="sig-name">{k}</span>'
+            f'<span class="sig-val">{v}</span></div>' for k, v in risk_items
+        ), unsafe_allow_html=True)
 
     # ── 完整交易记录（含筛选）────────────────────────────────
     _strat_base  = ["A · HMM信号投票", "B · Trailing Stop", "C · EMA趋势跟踪", "D · HMM+布林带"]
@@ -1567,12 +1510,16 @@ def render_asset(ticker: str) -> None:
         tdf_raw = pd.DataFrame(trades_view)
         tdf_raw["entry_regime"] = df["regime_label"].reindex(tdf_raw["entry_time"]).values
 
-        # ── 筛选器（直接堆叠，节省 columns 帧）──────────────────
-        exit_reasons = ["全部"] + sorted(tdf_raw["exit_reason"].unique().tolist())
-        sel_exit   = st.selectbox("出场原因", exit_reasons, key=f"exit_flt_{ticker}")
-        regimes_opts = ["全部"] + sorted(tdf_raw["entry_regime"].dropna().unique().tolist())
-        sel_regime = st.selectbox("入场 Regime", regimes_opts, key=f"regime_flt_{ticker}")
-        pnl_filter = st.selectbox("盈亏方向", ["全部", "仅盈利", "仅亏损"], key=f"pnl_flt_{ticker}")
+        # ── 筛选器 ────────────────────────────────────────────
+        flt1, flt2, flt3 = st.columns([2, 2, 2], gap="small")
+        with flt1:
+            exit_reasons = ["全部"] + sorted(tdf_raw["exit_reason"].unique().tolist())
+            sel_exit = st.selectbox("出场原因", exit_reasons, key=f"exit_flt_{ticker}")
+        with flt2:
+            regimes_opts = ["全部"] + sorted(tdf_raw["entry_regime"].dropna().unique().tolist())
+            sel_regime = st.selectbox("入场 Regime", regimes_opts, key=f"regime_flt_{ticker}")
+        with flt3:
+            pnl_filter = st.selectbox("盈亏方向", ["全部", "仅盈利", "仅亏损"], key=f"pnl_flt_{ticker}")
 
         tdf_flt = tdf_raw.copy()
         if sel_exit != "全部":
@@ -1692,7 +1639,6 @@ def _action_badge(action: str) -> str:
             f'letter-spacing:.3px">{action}</span>')
 
 
-@st.fragment
 def render_signals_tab() -> None:
     data = _load_latest_signal()
     if data is None:
@@ -1867,7 +1813,6 @@ def portfolio_equity_chart(eq_dict: dict) -> go.Figure:
     return fig
 
 
-@st.fragment
 def render_portfolio_tab() -> None:
     ALL_TICKERS = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
 
@@ -2064,40 +2009,29 @@ def main() -> None:
             st.rerun()
 
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-
-    # 懒加载导航：只渲染当前选中的页面，避免 WebSocket 帧过大
-    NAV_OPTIONS = [
+    tabs = st.tabs([
         "📡  今日信号", "🌐  组合",
         "🍎  AAPL", "🥇  Gold", "🥈  Silver", "🛢  Oil",
         "🟩  NVDA", "🔵  META", "📦  AMZN",
         "🔍  GOOG", "🪟  MSFT", "⚡  TSLA",
         "🪶  HOOD", "📊  SPY",  "🇨🇳  FXI", "🛡  PLTR",
-    ]
-    NAV_TICKER = {
-        "🍎  AAPL": "AAPL", "🥇  Gold": "GC=F", "🥈  Silver": "SI=F",
-        "🛢  Oil":  "CL=F", "🟩  NVDA": "NVDA", "🔵  META":  "META",
-        "📦  AMZN": "AMZN", "🔍  GOOG": "GOOG", "🪟  MSFT":  "MSFT",
-        "⚡  TSLA": "TSLA", "🪶  HOOD": "HOOD", "📊  SPY":   "SPY",
-        "🇨🇳  FXI": "FXI",  "🛡  PLTR": "PLTR",
-    }
-
-    _active_tab = st.radio(
-        "导航", NAV_OPTIONS,
-        index=st.session_state.get("_nav_idx", 0),
-        horizontal=True,
-        label_visibility="collapsed",
-        key="_nav_radio",
-    )
-    st.session_state["_nav_idx"] = NAV_OPTIONS.index(_active_tab)
-
-    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
-
-    if _active_tab == "📡  今日信号":
-        render_signals_tab()
-    elif _active_tab == "🌐  组合":
-        render_portfolio_tab()
-    elif _active_tab in NAV_TICKER:
-        render_asset(NAV_TICKER[_active_tab])
+    ])
+    with tabs[0]:  render_signals_tab()
+    with tabs[1]:  render_portfolio_tab()
+    with tabs[2]:  render_asset("AAPL")
+    with tabs[3]:  render_asset("GC=F")
+    with tabs[4]:  render_asset("SI=F")
+    with tabs[5]:  render_asset("CL=F")
+    with tabs[6]:  render_asset("NVDA")
+    with tabs[7]:  render_asset("META")
+    with tabs[8]:  render_asset("AMZN")
+    with tabs[9]:  render_asset("GOOG")
+    with tabs[10]: render_asset("MSFT")
+    with tabs[11]: render_asset("TSLA")
+    with tabs[12]: render_asset("HOOD")
+    with tabs[13]: render_asset("SPY")
+    with tabs[14]: render_asset("FXI")
+    with tabs[15]: render_asset("PLTR")
 
     st.markdown(
         "<div style='text-align:center;color:#1e293b;font-size:0.7rem;margin-top:2rem'>"
