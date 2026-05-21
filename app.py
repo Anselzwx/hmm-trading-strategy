@@ -1285,65 +1285,42 @@ def render_asset(ticker: str) -> None:
             return "—"
         return f"{v:+.1f}%"
 
-    cols = st.columns(4, gap="small")
-    rc = "green" if metrics["total_return_pct"] > 0 else "red"
-    ac = "green" if metrics["alpha_pct"] > 0 else "red"
-    with cols[0]: st.markdown(_metric("总收益",      f"{metrics['total_return_pct']:+.1f}%",
-                                                      f"年化 {_fmt_ann(metrics['ann_return_pct'])}", rc), unsafe_allow_html=True)
-    with cols[1]: st.markdown(_metric("vs B&H Alpha", f"{metrics['alpha_pct']:+.1f}%",
-                                                      f"B&H {metrics['bh_return_pct']:+.1f}%", ac), unsafe_allow_html=True)
-    with cols[2]: st.markdown(_metric("最大回撤",    f"{metrics['max_drawdown_pct']:.1f}%",
-                                                      "峰值→谷值", "red"), unsafe_allow_html=True)
-    with cols[3]: st.markdown(_metric("最终资本",    f"${metrics['final_capital']:,.0f}",
-                                                      f"起始 ${STARTING_CAP:,.0f} · {LEVERAGE}×", "yellow"), unsafe_allow_html=True)
-    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-
-    cols2 = st.columns(4, gap="small")
-    _sh = metrics["sharpe"]; _ca = metrics["calmar"]
+    # 16个指标卡合并为一个 st.markdown，减少 WebSocket 帧数
+    rc  = "green" if metrics["total_return_pct"] > 0 else "red"
+    ac  = "green" if metrics["alpha_pct"] > 0 else "red"
+    _sh = metrics["sharpe"]; _ca = metrics["calmar"]; _so = metrics["sortino"]
     sh_c = "green" if _sh > 1 else "yellow" if _sh > 0 else "red"
     ca_c = "green" if _ca > 1 else "yellow" if _ca > 0 else "red"
+    so_c = "green" if _so > 1 else "yellow" if _so > 0 else "red"
+    pf_c = "green" if metrics["profit_factor"] > 1.5 else "yellow" if metrics["profit_factor"] > 1 else "red"
+    ex_c = "green" if metrics["expectancy"] > 0 else "red"
+    cl_c = "green" if metrics["max_consec_loss"] <= 2 else "yellow" if metrics["max_consec_loss"] <= 4 else "red"
+    sk_c = "green" if metrics["skewness"] > 0 else "yellow"
     sa_v = f"{metrics['spy_alpha_pct']:+.1f}%" if metrics["spy_alpha_pct"] is not None else "N/A"
     sa_s = f"SPY {metrics['spy_bh_pct']:+.1f}%" if metrics["spy_bh_pct"] is not None else ""
     sa_c = "green" if (metrics["spy_alpha_pct"] or 0) > 0 else "red"
-    with cols2[0]: st.markdown(_metric("夏普比率",   _fmt_ratio(_sh),
-                                                      f"年化波动 {metrics['ann_vol_pct']:.1f}%", sh_c), unsafe_allow_html=True)
-    with cols2[1]: st.markdown(_metric("卡玛比率",   _fmt_ratio(_ca),
-                                                      "年化收益 / 最大回撤", ca_c), unsafe_allow_html=True)
-    with cols2[2]: st.markdown(_metric("月度胜率",   f"{metrics['monthly_win_pct']:.1f}%",
-                                                      f"交易胜率 {metrics['win_rate_pct']:.1f}%", "blue"), unsafe_allow_html=True)
-    with cols2[3]: st.markdown(_metric("vs SPY Alpha", sa_v, sa_s, sa_c), unsafe_allow_html=True)
-    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-
-    # ── 绩效指标 Row 3：新增高级指标 ─────────────────────────
-    cols3 = st.columns(4, gap="small")
-    _so = metrics["sortino"]
-    so_c  = "green" if _so > 1 else "yellow" if _so > 0 else "red"
-    pf_c  = "green" if metrics["profit_factor"] > 1.5 else "yellow" if metrics["profit_factor"] > 1 else "red"
-    ex_c  = "green" if metrics["expectancy"] > 0 else "red"
-    tr_c  = "green" if metrics["tail_ratio"] > 1 else "yellow"
-    with cols3[0]: st.markdown(_metric("Sortino 比率",  _fmt_ratio(_so),
-                                                         f"下行波动率标准化", so_c), unsafe_allow_html=True)
-    with cols3[1]: st.markdown(_metric("Profit Factor", f"{metrics['profit_factor']:.2f}",
-                                                         f"总盈利 / 总亏损", pf_c), unsafe_allow_html=True)
-    with cols3[2]: st.markdown(_metric("期望值/笔",     f"${metrics['expectancy']:+.0f}",
-                                                         f"盈亏比 {metrics['rr_ratio']:.2f}×", ex_c), unsafe_allow_html=True)
-    with cols3[3]: st.markdown(_metric("Tail Ratio",    f"{metrics['tail_ratio']:.2f}",
-                                                         "P95收益 / P5亏损", tr_c), unsafe_allow_html=True)
-    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-
-    cols4 = st.columns(4, gap="small")
-    cl_c  = "green" if metrics["max_consec_loss"] <= 2 else "yellow" if metrics["max_consec_loss"] <= 4 else "red"
-    sk_c  = "green" if metrics["skewness"] > 0 else "yellow"
     rc_label = f"{metrics['max_recovery_bars']}{'日' if is_daily else 'h'}"
-    with cols4[0]: st.markdown(_metric("最大连续亏损",  f"{metrics['max_consec_loss']} 笔",
-                                                         "连续止损次数上限", cl_c), unsafe_allow_html=True)
-    with cols4[1]: st.markdown(_metric("平均持仓",      f"{metrics['avg_hold_bars']:.0f} bars",
-                                                         f"平均仓位 {metrics['avg_pos_size_pct']:.0f}%", "blue"), unsafe_allow_html=True)
-    with cols4[2]: st.markdown(_metric("收益偏度",      f"{metrics['skewness']:+.2f}",
-                                                         f"峰度 {metrics['kurtosis']:.2f}", sk_c), unsafe_allow_html=True)
-    with cols4[3]: st.markdown(_metric("最长回撤修复",  rc_label,
-                                                         "峰值→修复所需时间", "yellow"), unsafe_allow_html=True)
-    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+
+    st.markdown(f"""
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+  {_metric("总收益",        f"{metrics['total_return_pct']:+.1f}%",  f"年化 {_fmt_ann(metrics['ann_return_pct'])}", rc)}
+  {_metric("vs B&H Alpha",  f"{metrics['alpha_pct']:+.1f}%",         f"B&H {metrics['bh_return_pct']:+.1f}%", ac)}
+  {_metric("最大回撤",      f"{metrics['max_drawdown_pct']:.1f}%",   "峰值→谷值", "red")}
+  {_metric("最终资本",      f"${metrics['final_capital']:,.0f}",      f"起始 ${STARTING_CAP:,.0f} · {LEVERAGE}×", "yellow")}
+  {_metric("夏普比率",      _fmt_ratio(_sh),                          f"年化波动 {metrics['ann_vol_pct']:.1f}%", sh_c)}
+  {_metric("卡玛比率",      _fmt_ratio(_ca),                          "年化收益 / 最大回撤", ca_c)}
+  {_metric("月度胜率",      f"{metrics['monthly_win_pct']:.1f}%",    f"交易胜率 {metrics['win_rate_pct']:.1f}%", "blue")}
+  {_metric("vs SPY Alpha",  sa_v,                                      sa_s, sa_c)}
+  {_metric("Sortino 比率",  _fmt_ratio(_so),                          "下行波动率标准化", so_c)}
+  {_metric("Profit Factor", f"{metrics['profit_factor']:.2f}",        "总盈利 / 总亏损", pf_c)}
+  {_metric("期望值/笔",     f"${metrics['expectancy']:+.0f}",         f"盈亏比 {metrics['rr_ratio']:.2f}×", ex_c)}
+  {_metric("Tail Ratio",    f"{metrics['tail_ratio']:.2f}",           "P95收益 / P5亏损", "yellow")}
+  {_metric("最大连续亏损",  f"{metrics['max_consec_loss']} 笔",       "连续止损次数上限", cl_c)}
+  {_metric("平均持仓",      f"{metrics['avg_hold_bars']:.0f} bars",   f"平均仓位 {metrics['avg_pos_size_pct']:.0f}%", "blue")}
+  {_metric("收益偏度",      f"{metrics['skewness']:+.2f}",            f"峰度 {metrics['kurtosis']:.2f}", sk_c)}
+  {_metric("最长回撤修复",  rc_label,                                  "峰值→修复所需时间", "yellow")}
+</div>
+""", unsafe_allow_html=True)
 
     # ── 异常指标解读框 ────────────────────────────────────────
     _anomalies = []
