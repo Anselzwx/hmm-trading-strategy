@@ -1181,20 +1181,8 @@ def render_asset(ticker: str) -> None:
 
     st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
 
-    # ── K线 + Volume + RSI ──────────────────────────────────
-    st.markdown('<div class="section-header">📊 K线图 · Volume · RSI&nbsp;&nbsp;<span style="font-size:0.75rem;color:#475569;font-weight:400">绿=Bull Run · 浅绿=Bull+ · 蓝=Warming Up · 红=Bear</span></div>', unsafe_allow_html=True)
-    st.plotly_chart(candle_chart(df, trades, ticker), use_container_width=True)
-
-    # ── MACD + 信号强度 ──────────────────────────────────────
-    st.markdown('<div class="section-header">📉 MACD &amp; 信号强度时序</div>', unsafe_allow_html=True)
-    st.plotly_chart(macd_signal_chart(df, min_conf), use_container_width=True)
-
-    # ── Stochastic + CCI ─────────────────────────────────────
-    st.markdown('<div class="section-header">🔀 随机震荡指标 &amp; CCI</div>', unsafe_allow_html=True)
-    st.plotly_chart(stoch_cci_chart(df), use_container_width=True)
-
     # ── 时间段选择器（预设 + 自定义）────────────────────────────
-    st.markdown('<div class="section-header">📅 回测区间</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">📅 时间区间筛选</div>', unsafe_allow_html=True)
 
     _date_min = df.index.min().date()
     _date_max = df.index.max().date()
@@ -1261,6 +1249,18 @@ def render_asset(ticker: str) -> None:
         metrics = _cm(_df_slice, _trades_slice, ticker, is_daily)
     except Exception:
         pass  # 切片太短时保留全区间指标
+
+    # ── K线 + Volume + RSI ──────────────────────────────────
+    st.markdown('<div class="section-header">📊 K线图 · Volume · RSI&nbsp;&nbsp;<span style="font-size:0.75rem;color:#475569;font-weight:400">绿=Bull Run · 浅绿=Bull+ · 蓝=Warming Up · 红=Bear</span></div>', unsafe_allow_html=True)
+    st.plotly_chart(candle_chart(_df_slice, _trades_slice, ticker), use_container_width=True)
+
+    # ── MACD + 信号强度 ──────────────────────────────────────
+    st.markdown('<div class="section-header">📉 MACD &amp; 信号强度时序</div>', unsafe_allow_html=True)
+    st.plotly_chart(macd_signal_chart(_df_slice, min_conf), use_container_width=True)
+
+    # ── Stochastic + CCI ─────────────────────────────────────
+    st.markdown('<div class="section-header">🔀 随机震荡指标 &amp; CCI</div>', unsafe_allow_html=True)
+    st.plotly_chart(stoch_cci_chart(_df_slice), use_container_width=True)
 
     # ── 绩效指标 Row 1 ────────────────────────────────────────
     st.markdown('<div class="section-header">📈 回测绩效</div>', unsafe_allow_html=True)
