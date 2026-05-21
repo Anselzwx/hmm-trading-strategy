@@ -2092,20 +2092,12 @@ def main() -> None:
 
     st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
 
-    def _safe_render(fn, *args):
-        try:
-            fn(*args)
-        except Exception as _e:
-            import traceback
-            st.error(f"渲染错误：{_e}")
-            st.code(traceback.format_exc(), language="python")
-
     if _active_tab == "📡  今日信号":
-        _safe_render(render_signals_tab)
+        render_signals_tab()
     elif _active_tab == "🌐  组合":
-        _safe_render(render_portfolio_tab)
+        render_portfolio_tab()
     elif _active_tab in NAV_TICKER:
-        _safe_render(render_asset, NAV_TICKER[_active_tab])
+        render_asset(NAV_TICKER[_active_tab])
 
     st.markdown(
         "<div style='text-align:center;color:#1e293b;font-size:0.7rem;margin-top:2rem'>"
