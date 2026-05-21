@@ -1181,57 +1181,58 @@ def render_asset(ticker: str) -> None:
 
     st.markdown("<div style='height:1.2rem'></div>", unsafe_allow_html=True)
 
-    # ── 时间段选择器（预设 + 自定义）────────────────────────────
+    # ── 时间段选择器（预设快捷键 + 双端滑块）────────────────────
     st.markdown('<div class="section-header">📅 时间区间筛选</div>', unsafe_allow_html=True)
 
     _date_min = df.index.min().date()
     _date_max = df.index.max().date()
+    import datetime as _dt
 
     PRESETS = {
-        "全区间":       (_date_min,                            _date_max),
-        "2008金融危机": (max(_date_min, __import__('datetime').date(2008,1,1)),  __import__('datetime').date(2009,6,30)),
-        "2010-2015":   (max(_date_min, __import__('datetime').date(2010,1,1)),  __import__('datetime').date(2015,12,31)),
-        "2018熊市":    (max(_date_min, __import__('datetime').date(2018,1,1)),  __import__('datetime').date(2018,12,31)),
-        "2020疫情":    (max(_date_min, __import__('datetime').date(2020,1,1)),  __import__('datetime').date(2020,12,31)),
-        "2022加息":    (max(_date_min, __import__('datetime').date(2022,1,1)),  __import__('datetime').date(2022,12,31)),
-        "近3年":       (max(_date_min, (_date_max.replace(year=_date_max.year-3))), _date_max),
-        "近1年":       (max(_date_min, (_date_max.replace(year=_date_max.year-1))), _date_max),
+        "全区间":       (_date_min,                                                    _date_max),
+        "2008危机":     (max(_date_min, _dt.date(2008,1,1)),  _dt.date(2009,6,30)),
+        "2010-2015":   (max(_date_min, _dt.date(2010,1,1)),  _dt.date(2015,12,31)),
+        "2018熊市":    (max(_date_min, _dt.date(2018,1,1)),  _dt.date(2018,12,31)),
+        "2020疫情":    (max(_date_min, _dt.date(2020,1,1)),  _dt.date(2020,12,31)),
+        "2022加息":    (max(_date_min, _dt.date(2022,1,1)),  _dt.date(2022,12,31)),
+        "近3年":       (max(_date_min, _date_max.replace(year=_date_max.year-3)),      _date_max),
+        "近1年":       (max(_date_min, _date_max.replace(year=_date_max.year-1)),      _date_max),
     }
 
+    _safe_t     = ticker.replace("=", "_").replace("/", "_")
+    _slider_key = f"slider_{_safe_t}"
+
+    # 预设按钮行
     _preset_cols = st.columns(len(PRESETS), gap="small")
-    _safe_t      = ticker.replace("=", "_").replace("/", "_")
-    _preset_key  = f"preset_{_safe_t}"
-    _start_key   = f"eq_start_{_safe_t}"
-    _end_key     = f"eq_end_{_safe_t}"
-
-    # 初始化 session_state
-    if _preset_key not in st.session_state:
-        st.session_state[_preset_key] = "全区间"
-    if _start_key not in st.session_state:
-        st.session_state[_start_key] = _date_min
-    if _end_key not in st.session_state:
-        st.session_state[_end_key] = _date_max
-
     for i, (label, (ps, pe)) in enumerate(PRESETS.items()):
         with _preset_cols[i]:
-            _active = st.session_state[_preset_key] == label
-            if st.button(label, key=f"preset_{ticker}_{label}",
+            # 判断当前滑块值是否与该预设匹配
+            _cur = st.session_state.get(_slider_key, (_date_min, _date_max))
+            _active = (_cur == (ps, pe))
+            if st.button(label, key=f"preset_{_safe_t}_{label}",
                          type="primary" if _active else "secondary",
                          use_container_width=True):
-                st.session_state[_preset_key] = label
-                st.session_state[_start_key]  = ps
-                st.session_state[_end_key]    = pe
+                st.session_state[_slider_key] = (ps, pe)
                 st.rerun()
 
-    _pcol_l, _pcol_r = st.columns(2, gap="small")
-    with _pcol_l:
-        _start = st.date_input("起始日期",
-                               min_value=_date_min, max_value=_date_max,
-                               key=_start_key)
-    with _pcol_r:
-        _end = st.date_input("结束日期",
-                             min_value=_date_min, max_value=_date_max,
-                             key=_end_key)
+    # 双端日期滑块（拖动即时联动）
+    _slider_val = st.session_state.get(_slider_key, (_date_min, _date_max))
+    # 确保值在有效范围内
+    _slider_val = (
+        max(_date_min, min(_slider_val[0], _date_max)),
+        max(_date_min, min(_slider_val[1], _date_max)),
+    )
+    _range = st.slider(
+        "拖动选择时间范围",
+        min_value=_date_min,
+        max_value=_date_max,
+        value=_slider_val,
+        format="YYYY-MM-DD",
+        key=_slider_key,
+        label_visibility="collapsed",
+    )
+    _start, _end = _range
+    st.caption(f"📅 {_start}  →  {_end}　　共 {(_end - _start).days} 天")
 
     if _start >= _end:
         st.warning("起始日期必须早于结束日期")
