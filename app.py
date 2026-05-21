@@ -2009,29 +2009,37 @@ def main() -> None:
             st.rerun()
 
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-    tabs = st.tabs([
+
+    NAV_OPTIONS = [
         "📡  今日信号", "🌐  组合",
         "🍎  AAPL", "🥇  Gold", "🥈  Silver", "🛢  Oil",
         "🟩  NVDA", "🔵  META", "📦  AMZN",
         "🔍  GOOG", "🪟  MSFT", "⚡  TSLA",
         "🪶  HOOD", "📊  SPY",  "🇨🇳  FXI", "🛡  PLTR",
-    ])
-    with tabs[0]:  render_signals_tab()
-    with tabs[1]:  render_portfolio_tab()
-    with tabs[2]:  render_asset("AAPL")
-    with tabs[3]:  render_asset("GC=F")
-    with tabs[4]:  render_asset("SI=F")
-    with tabs[5]:  render_asset("CL=F")
-    with tabs[6]:  render_asset("NVDA")
-    with tabs[7]:  render_asset("META")
-    with tabs[8]:  render_asset("AMZN")
-    with tabs[9]:  render_asset("GOOG")
-    with tabs[10]: render_asset("MSFT")
-    with tabs[11]: render_asset("TSLA")
-    with tabs[12]: render_asset("HOOD")
-    with tabs[13]: render_asset("SPY")
-    with tabs[14]: render_asset("FXI")
-    with tabs[15]: render_asset("PLTR")
+    ]
+    NAV_TICKER = {
+        "🍎  AAPL": "AAPL", "🥇  Gold": "GC=F", "🥈  Silver": "SI=F",
+        "🛢  Oil":  "CL=F", "🟩  NVDA": "NVDA", "🔵  META":  "META",
+        "📦  AMZN": "AMZN", "🔍  GOOG": "GOOG", "🪟  MSFT":  "MSFT",
+        "⚡  TSLA": "TSLA", "🪶  HOOD": "HOOD", "📊  SPY":   "SPY",
+        "🇨🇳  FXI": "FXI",  "🛡  PLTR": "PLTR",
+    }
+    _active = st.radio(
+        "导航", NAV_OPTIONS,
+        index=st.session_state.get("_nav_idx", 0),
+        horizontal=True,
+        label_visibility="collapsed",
+        key="_nav_radio",
+    )
+    st.session_state["_nav_idx"] = NAV_OPTIONS.index(_active)
+    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+    if _active == "📡  今日信号":
+        render_signals_tab()
+    elif _active == "🌐  组合":
+        render_portfolio_tab()
+    elif _active in NAV_TICKER:
+        render_asset(NAV_TICKER[_active])
 
     st.markdown(
         "<div style='text-align:center;color:#1e293b;font-size:0.7rem;margin-top:2rem'>"
