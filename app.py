@@ -2016,22 +2016,30 @@ def main() -> None:
         "🔍  GOOG", "🪟  MSFT", "⚡  TSLA",
         "🪶  HOOD", "📊  SPY",  "🇨🇳  FXI", "🛡  PLTR",
     ])
-    with tabs[0]:  render_signals_tab()
-    with tabs[1]:  render_portfolio_tab()
-    with tabs[2]:  render_asset("AAPL")
-    with tabs[3]:  render_asset("GC=F")
-    with tabs[4]:  render_asset("SI=F")
-    with tabs[5]:  render_asset("CL=F")
-    with tabs[6]:  render_asset("NVDA")
-    with tabs[7]:  render_asset("META")
-    with tabs[8]:  render_asset("AMZN")
-    with tabs[9]:  render_asset("GOOG")
-    with tabs[10]: render_asset("MSFT")
-    with tabs[11]: render_asset("TSLA")
-    with tabs[12]: render_asset("HOOD")
-    with tabs[13]: render_asset("SPY")
-    with tabs[14]: render_asset("FXI")
-    with tabs[15]: render_asset("PLTR")
+    def _safe_render(fn, *args):
+        try:
+            fn(*args)
+        except Exception as _e:
+            import traceback
+            st.error(f"渲染错误：{_e}")
+            st.code(traceback.format_exc(), language="python")
+
+    with tabs[0]:  _safe_render(render_signals_tab)
+    with tabs[1]:  _safe_render(render_portfolio_tab)
+    with tabs[2]:  _safe_render(render_asset, "AAPL")
+    with tabs[3]:  _safe_render(render_asset, "GC=F")
+    with tabs[4]:  _safe_render(render_asset, "SI=F")
+    with tabs[5]:  _safe_render(render_asset, "CL=F")
+    with tabs[6]:  _safe_render(render_asset, "NVDA")
+    with tabs[7]:  _safe_render(render_asset, "META")
+    with tabs[8]:  _safe_render(render_asset, "AMZN")
+    with tabs[9]:  _safe_render(render_asset, "GOOG")
+    with tabs[10]: _safe_render(render_asset, "MSFT")
+    with tabs[11]: _safe_render(render_asset, "TSLA")
+    with tabs[12]: _safe_render(render_asset, "HOOD")
+    with tabs[13]: _safe_render(render_asset, "SPY")
+    with tabs[14]: _safe_render(render_asset, "FXI")
+    with tabs[15]: _safe_render(render_asset, "PLTR")
 
     st.markdown(
         "<div style='text-align:center;color:#1e293b;font-size:0.7rem;margin-top:2rem'>"
