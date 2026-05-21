@@ -1264,11 +1264,31 @@ def render_asset(ticker: str) -> None:
 
     # ── 绩效指标 Row 1 ────────────────────────────────────────
     st.markdown('<div class="section-header">📈 回测绩效</div>', unsafe_allow_html=True)
+
+    # 区间不足1年时，年化换算失真——显示警告并隐藏年化指标
+    _slice_bars   = len(_df_slice)
+    _slice_years  = _slice_bars / 252
+    _short_window = _slice_bars < 252
+
+    if _short_window:
+        st.warning(f"⚠️ 当前区间仅 {_slice_bars} 个交易日（不足1年），夏普/卡玛等年化指标统计意义有限，仅供参考。")
+
+    def _fmt_ratio(v: float, cap: float = 50.0) -> str:
+        """对年化比率做上限截断，避免短区间虚假数字。"""
+        if _short_window:
+            return "—" if abs(v) > cap else f"{v:.2f}"
+        return f"{v:.2f}"
+
+    def _fmt_ann(v: float) -> str:
+        if _short_window:
+            return "—"
+        return f"{v:+.1f}%"
+
     cols = st.columns(4, gap="small")
     rc = "green" if metrics["total_return_pct"] > 0 else "red"
     ac = "green" if metrics["alpha_pct"] > 0 else "red"
     with cols[0]: st.markdown(_metric("总收益",      f"{metrics['total_return_pct']:+.1f}%",
-                                                      f"年化 {metrics['ann_return_pct']:+.1f}%", rc), unsafe_allow_html=True)
+                                                      f"年化 {_fmt_ann(metrics['ann_return_pct'])}", rc), unsafe_allow_html=True)
     with cols[1]: st.markdown(_metric("vs B&H Alpha", f"{metrics['alpha_pct']:+.1f}%",
                                                       f"B&H {metrics['bh_return_pct']:+.1f}%", ac), unsafe_allow_html=True)
     with cols[2]: st.markdown(_metric("最大回撤",    f"{metrics['max_drawdown_pct']:.1f}%",
@@ -1278,14 +1298,15 @@ def render_asset(ticker: str) -> None:
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
     cols2 = st.columns(4, gap="small")
-    sh_c = "green" if metrics["sharpe"] > 1 else "yellow" if metrics["sharpe"] > 0 else "red"
-    ca_c = "green" if metrics["calmar"] > 1 else "yellow" if metrics["calmar"] > 0 else "red"
+    _sh = metrics["sharpe"]; _ca = metrics["calmar"]
+    sh_c = "green" if _sh > 1 else "yellow" if _sh > 0 else "red"
+    ca_c = "green" if _ca > 1 else "yellow" if _ca > 0 else "red"
     sa_v = f"{metrics['spy_alpha_pct']:+.1f}%" if metrics["spy_alpha_pct"] is not None else "N/A"
     sa_s = f"SPY {metrics['spy_bh_pct']:+.1f}%" if metrics["spy_bh_pct"] is not None else ""
     sa_c = "green" if (metrics["spy_alpha_pct"] or 0) > 0 else "red"
-    with cols2[0]: st.markdown(_metric("夏普比率",   f"{metrics['sharpe']:.2f}",
+    with cols2[0]: st.markdown(_metric("夏普比率",   _fmt_ratio(_sh),
                                                       f"年化波动 {metrics['ann_vol_pct']:.1f}%", sh_c), unsafe_allow_html=True)
-    with cols2[1]: st.markdown(_metric("卡玛比率",   f"{metrics['calmar']:.2f}",
+    with cols2[1]: st.markdown(_metric("卡玛比率",   _fmt_ratio(_ca),
                                                       "年化收益 / 最大回撤", ca_c), unsafe_allow_html=True)
     with cols2[2]: st.markdown(_metric("月度胜率",   f"{metrics['monthly_win_pct']:.1f}%",
                                                       f"交易胜率 {metrics['win_rate_pct']:.1f}%", "blue"), unsafe_allow_html=True)
@@ -1294,11 +1315,12 @@ def render_asset(ticker: str) -> None:
 
     # ── 绩效指标 Row 3：新增高级指标 ─────────────────────────
     cols3 = st.columns(4, gap="small")
-    so_c  = "green" if metrics["sortino"] > 1 else "yellow" if metrics["sortino"] > 0 else "red"
+    _so = metrics["sortino"]
+    so_c  = "green" if _so > 1 else "yellow" if _so > 0 else "red"
     pf_c  = "green" if metrics["profit_factor"] > 1.5 else "yellow" if metrics["profit_factor"] > 1 else "red"
     ex_c  = "green" if metrics["expectancy"] > 0 else "red"
     tr_c  = "green" if metrics["tail_ratio"] > 1 else "yellow"
-    with cols3[0]: st.markdown(_metric("Sortino 比率",  f"{metrics['sortino']:.2f}",
+    with cols3[0]: st.markdown(_metric("Sortino 比率",  _fmt_ratio(_so),
                                                          f"下行波动率标准化", so_c), unsafe_allow_html=True)
     with cols3[1]: st.markdown(_metric("Profit Factor", f"{metrics['profit_factor']:.2f}",
                                                          f"总盈利 / 总亏损", pf_c), unsafe_allow_html=True)
