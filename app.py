@@ -1344,6 +1344,97 @@ def render_asset(ticker: str) -> None:
                                                          "峰值→修复所需时间", "yellow"), unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
 
+    # ── 异常指标解读框 ────────────────────────────────────────
+    _anomalies = []
+
+    _sharpe_raw  = metrics["sharpe"]
+    _calmar_raw  = metrics["calmar"]
+    _sortino_raw = metrics["sortino"]
+    _dd_raw      = abs(metrics["max_drawdown_pct"])
+    _wr_raw      = metrics["win_rate_pct"]
+    _pf_raw      = metrics["profit_factor"]
+    _nt          = metrics["n_trades"]
+    _ann_raw     = metrics["ann_return_pct"]
+
+    if _sharpe_raw > 10:
+        _anomalies.append((
+            f"夏普比率 {_sharpe_raw:.2f}",
+            "夏普比率极高通常由以下原因造成：① 交易笔数过少（本区间仅 "
+            f"{_nt} 笔），少量高盈利交易会大幅压低收益标准差；"
+            "② 策略长期空仓（持仓时间短），空仓期净值不波动，导致整体波动率偏低；"
+            "③ 回测区间恰好覆盖强势上涨阶段。现实中难以复现，参考意义有限。"
+        ))
+
+    if _calmar_raw > 50:
+        _anomalies.append((
+            f"卡玛比率 {_calmar_raw:.2f}",
+            "卡玛 = 年化收益 / 最大回撤。极高值意味着策略在本区间几乎没有深度回撤（"
+            f"最大回撤仅 {_dd_raw:.1f}%），而年化收益又很高。"
+            "少笔数策略在特定行情下可实现，但样本外大概率无法维持。"
+        ))
+
+    if _sortino_raw > 50:
+        _anomalies.append((
+            f"Sortino 比率 {_sortino_raw:.2f}",
+            "Sortino 只计算下行波动率。当策略大部分时间空仓或单边上涨时，"
+            "下行波动率接近零，导致 Sortino 爆炸性升高，此时该指标失去区分意义。"
+        ))
+
+    if _dd_raw < 3 and _nt >= 5:
+        _anomalies.append((
+            f"最大回撤 {metrics['max_drawdown_pct']:.1f}%",
+            "最大回撤极小（<3%）在多年回测中极为罕见。"
+            "可能原因：① 策略绝大多数时间空仓，仅捕捉少数强势趋势；"
+            "② ATR 止损在大行情中未被触及；"
+            "③ 回测区间没有覆盖完整市场周期。不代表未来不会出现更大回撤。"
+        ))
+
+    if _wr_raw > 85 and _nt >= 5:
+        _anomalies.append((
+            f"交易胜率 {_wr_raw:.1f}%",
+            "胜率极高往往伴随盈亏比下降，或交易笔数极少导致统计不稳定。"
+            f"本区间共 {_nt} 笔交易，样本量{'较少，' if _nt < 20 else ''}需谨慎外推。"
+        ))
+
+    if _pf_raw > 10 and _nt >= 5:
+        _anomalies.append((
+            f"Profit Factor {_pf_raw:.2f}",
+            "Profit Factor > 10 意味着总盈利是总亏损的 10 倍以上，"
+            "在少笔数策略中很常见（1-2 次大亏损被多次小盈利覆盖）。"
+            "笔数越少，该指标越不稳定。"
+        ))
+
+    if _nt < 10:
+        _anomalies.append((
+            f"交易笔数仅 {_nt} 笔",
+            "样本量不足 10 笔时，所有统计指标（胜率、夏普、期望值等）"
+            "的置信区间都非常宽，不具备统计显著性。"
+            "建议扩大回测区间或降低信号门槛以获得更多交易样本。"
+        ))
+
+    if _anomalies:
+        _rows_html = "".join(
+            f"""<div style="margin-bottom:12px;">
+  <div style="font-size:0.82rem;font-weight:700;color:#fbbf24;margin-bottom:3px;">
+    ⚠️ {title}
+  </div>
+  <div style="font-size:0.78rem;color:#94a3b8;line-height:1.6;">{desc}</div>
+</div>"""
+            for title, desc in _anomalies
+        )
+        st.markdown(f"""
+<div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);
+            border-radius:14px;padding:18px 22px;margin-bottom:1.2rem;">
+  <div style="font-size:0.85rem;font-weight:700;color:#fbbf24;margin-bottom:14px;
+              letter-spacing:.3px;">📋 异常指标解读</div>
+  {_rows_html}
+  <div style="font-size:0.72rem;color:#475569;margin-top:10px;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;">
+    以上指标数值偏离常规范围，已列出可能原因供参考。数值本身不代表策略存在问题，
+    需结合交易笔数、回测区间长度和市场环境综合判断。
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
     # ── 四策略对比表 ─────────────────────────────────────────
     st.markdown('<div class="section-header">🏆 四策略对比</div>', unsafe_allow_html=True)
     _strat_rows = []
