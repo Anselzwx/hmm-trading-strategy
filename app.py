@@ -1010,7 +1010,7 @@ def render_asset(ticker: str) -> None:
     df       = res["df"]
     is_daily = res.get("is_daily", True)
 
-    # 按 Calmar 选最优策略（总收益必须为正才参与评选）
+    # 综合得分选最优策略：Calmar × log(n_trades+1) 权重，要求至少20笔且总收益为正
     _all_strats = {
         "A · HMM信号投票":   (res["metrics"],              res["trades"]),
         "B · Trailing Stop": (res.get("metrics_b") or {}, res.get("trades_b") or []),
@@ -1020,13 +1020,20 @@ def render_asset(ticker: str) -> None:
     def _score(m):
         if not m or m.get("total_return_pct", 0) <= 0:
             return -999
-        return m.get("calmar", 0)
+        n = m.get("n_trades") or 0
+        if n < 20:
+            return -999
+        calmar = m.get("calmar", 0)
+        # log(n+1) 权重：20笔=3.04, 50笔=3.93, 100笔=4.62，差异不超过1.5倍，避免笔数主导
+        return calmar * np.log(n + 1)
     best_name = max(_all_strats, key=lambda k: _score(_all_strats[k][0]))
     metrics, trades = _all_strats[best_name]
     if not metrics:
         metrics, trades = res["metrics"], res["trades"]
         best_name = "A · HMM信号投票"
-    st.caption(f"📊 最优策略（Calmar最高）：**策略{best_name}**  Calmar {metrics.get('calmar',0):.2f}  Sharpe {metrics.get('sharpe',0):.2f}")
+    _best_n = metrics.get("n_trades") or len(trades)
+    _best_composite = metrics.get("calmar", 0) * np.log(_best_n + 1) if _best_n >= 20 else 0
+    st.caption(f"📊 最优策略（综合得分 = Calmar × log(笔数+1)，≥20笔）：**策略{best_name}**  综合得分 {_best_composite:.2f}  Calmar {metrics.get('calmar',0):.2f}  交易 {_best_n} 笔")
 
     last     = df.iloc[-1]
     n_states   = res.get("n_states",   N_STATES)
@@ -1356,14 +1363,16 @@ def render_asset(ticker: str) -> None:
         _calmar = _sm.get('calmar')
         if _calmar is None and _sm.get('ann_return_pct') and _sm.get('max_drawdown_pct'):
             _calmar = abs(_sm['ann_return_pct'] / _sm['max_drawdown_pct']) if _sm['max_drawdown_pct'] != 0 else 0
+        _composite = (_calmar or 0) * np.log(_n_trades + 1) if _n_trades >= 20 else 0
         _strat_rows.append({
             "策略": _prefix + _sname,
-            "总收益":  f"{_sm.get('total_return_pct',0):+.1f}%",
-            "年化":    f"{_sm.get('ann_return_pct',0):+.1f}%",
-            "Sharpe":  f"{_sm.get('sharpe',0):.2f}",
-            "Calmar":  f"{(_calmar or 0):.2f}",
-            "MaxDD":   f"{_sm.get('max_drawdown_pct',0):.1f}%",
-            "胜率":    f"{_sm.get('win_rate_pct',0):.1f}%",
+            "总收益":   f"{_sm.get('total_return_pct',0):+.1f}%",
+            "年化":     f"{_sm.get('ann_return_pct',0):+.1f}%",
+            "Sharpe":   f"{_sm.get('sharpe',0):.2f}",
+            "Calmar":   f"{(_calmar or 0):.2f}",
+            "综合得分": f"{_composite:.2f}" + ("" if _n_trades >= 20 else " ⚠️<20笔"),
+            "MaxDD":    f"{_sm.get('max_drawdown_pct',0):.1f}%",
+            "胜率":     f"{_sm.get('win_rate_pct',0):.1f}%",
             "交易笔数": str(_n_trades),
         })
     if _strat_rows:
