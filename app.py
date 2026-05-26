@@ -54,80 +54,142 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.markdown("""
+def _get_theme():
+    return st.session_state.get("_theme", "dark")
+
+def _theme_vars():
+    t = _get_theme()
+    if t == "light":
+        return {
+            "bg": "#f8fafc", "card_bg": "rgba(0,0,0,0.03)", "card_border": "rgba(0,0,0,0.08)",
+            "text": "#0f172a", "sub": "#64748b", "grid": "rgba(0,0,0,0.06)",
+            "chart_bg": "#f8fafc", "nav_bg": "rgba(0,0,0,0.04)", "nav_sel": "rgba(0,0,0,0.10)",
+        }
+    return {
+        "bg": "#080c14", "card_bg": "rgba(255,255,255,0.04)", "card_border": "rgba(255,255,255,0.08)",
+        "text": "#f1f5f9", "sub": "#475569", "grid": "rgba(255,255,255,0.05)",
+        "chart_bg": "#080c14", "nav_bg": "rgba(255,255,255,0.03)", "nav_sel": "rgba(255,255,255,0.08)",
+    }
+
+def _inject_css():
+    t = _get_theme()
+    v = _theme_vars()
+    is_light = (t == "light")
+    metric_label_c  = "#475569" if is_light else "#64748b"
+    metric_sub_c    = "#64748b" if is_light else "#475569"
+    sig_name_c      = "#475569" if is_light else "#94a3b8"
+    sig_val_c       = "#1e293b" if is_light else "#cbd5e1"
+    sig_row_bg      = "rgba(0,0,0,0.03)" if is_light else "rgba(255,255,255,0.025)"
+    sig_row_bor     = "rgba(0,0,0,0.07)" if is_light else "rgba(255,255,255,0.05)"
+    sig_row_hov     = "rgba(0,0,0,0.06)" if is_light else "rgba(255,255,255,0.045)"
+    section_c       = "#1e293b" if is_light else "#e2e8f0"
+    section_bor     = "rgba(0,0,0,0.10)" if is_light else "rgba(255,255,255,0.07)"
+    page_title_c    = "#0f172a" if is_light else "#f1f5f9"
+    page_sub_c      = "#64748b" if is_light else "#475569"
+    tab_c           = "#475569" if is_light else "#64748b"
+    tab_sel_c       = "#0f172a" if is_light else "#e2e8f0"
+    signal_long_bg  = "linear-gradient(135deg,#d1fae5,#a7f3d0)" if is_light else "linear-gradient(135deg,#002d16,#004d24)"
+    signal_long_bor = "rgba(0,150,80,0.4)" if is_light else "rgba(0,230,118,0.4)"
+    signal_long_sh  = "0 0 20px rgba(0,150,80,0.08)" if is_light else "0 0 40px rgba(0,230,118,0.12),inset 0 1px 0 rgba(0,230,118,0.15)"
+    signal_cash_bg  = "linear-gradient(135deg,#f1f5f9,#e2e8f0)" if is_light else "linear-gradient(135deg,#0f1420,#141929)"
+    signal_cash_bor = "rgba(100,116,139,0.3)"
+    signal_cash_sh  = "0 2px 8px rgba(0,0,0,0.06)" if is_light else "0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.04)"
+    signal_title_c  = "#475569" if is_light else "#64748b"
+    regime_bull_bg  = "rgba(0,180,80,0.10)" if is_light else "rgba(0,230,118,0.12)"
+    regime_bear_bg  = "rgba(220,38,38,0.10)" if is_light else "rgba(255,82,82,0.12)"
+    regime_neut_bg  = "rgba(180,140,0,0.10)" if is_light else "rgba(255,215,64,0.10)"
+
+    st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', -apple-system, sans-serif; background: #080c14; }
-.block-container { padding: 1rem 2rem 3rem 2rem; max-width: 1600px; }
+html, body, [class*="css"] {{ font-family: 'Inter', -apple-system, sans-serif; background: {v['bg']}; color: {v['text']}; }}
+.block-container {{ padding: 1rem 2rem 3rem 2rem; max-width: 1600px; }}
 
-.glass-card {
-    background: linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01));
-    border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px 24px;
+.glass-card {{
+    background: linear-gradient(135deg,{v['card_bg']},{v['card_bg']});
+    border: 1px solid {v['card_border']}; border-radius: 16px; padding: 20px 24px;
     backdrop-filter: blur(12px);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+    box-shadow: 0 8px 32px rgba(0,0,0,{'0.1' if is_light else '0.4'}), inset 0 1px 0 {v['card_border']};
     margin-bottom: 2px;
-}
-.metric-card {
-    background: linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01));
-    border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 18px 16px;
+}}
+.metric-card {{
+    background: linear-gradient(135deg,{v['card_bg']},{v['card_bg']});
+    border: 1px solid {v['card_border']}; border-radius: 14px; padding: 18px 16px;
     text-align: center;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+    box-shadow: 0 4px 24px rgba(0,0,0,{'0.06' if is_light else '0.5'}), inset 0 1px 0 {v['card_border']};
     transition: transform .15s ease, box-shadow .15s ease;
-}
-.metric-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
-.metric-label { font-size: 0.68rem; color: #64748b; text-transform: uppercase; letter-spacing: 1.4px; margin-bottom: 8px; font-weight: 500; }
-.metric-value { font-size: 1.9rem; font-weight: 800; line-height: 1; }
-.metric-sub   { font-size: 0.7rem; color: #475569; margin-top: 6px; font-weight: 400; }
+}}
+.metric-card:hover {{ transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,{'0.12' if is_light else '0.6'}); }}
+.metric-label {{ font-size: 0.68rem; color: {metric_label_c}; text-transform: uppercase; letter-spacing: 1.4px; margin-bottom: 8px; font-weight: 500; }}
+.metric-value {{ font-size: 1.9rem; font-weight: 800; line-height: 1; }}
+.metric-sub   {{ font-size: 0.7rem; color: {metric_sub_c}; margin-top: 6px; font-weight: 400; }}
 
-.signal-long {
-    background: linear-gradient(135deg,#002d16,#004d24);
-    border: 1px solid rgba(0,230,118,0.4); border-radius: 16px; padding: 22px 28px; text-align: center;
-    box-shadow: 0 0 40px rgba(0,230,118,0.12), inset 0 1px 0 rgba(0,230,118,0.15);
-}
-.signal-cash {
-    background: linear-gradient(135deg,#0f1420,#141929);
-    border: 1px solid rgba(100,116,139,0.3); border-radius: 16px; padding: 22px 28px; text-align: center;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
-}
-.signal-title { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 1.4px; margin-bottom: 10px; font-weight:500; }
-.signal-value { font-size: 2.4rem; font-weight: 900; letter-spacing: -1px; }
+.signal-long {{
+    background: {signal_long_bg};
+    border: 1px solid {signal_long_bor}; border-radius: 16px; padding: 22px 28px; text-align: center;
+    box-shadow: {signal_long_sh};
+}}
+.signal-cash {{
+    background: {signal_cash_bg};
+    border: 1px solid {signal_cash_bor}; border-radius: 16px; padding: 22px 28px; text-align: center;
+    box-shadow: {signal_cash_sh};
+}}
+.signal-title {{ font-size: 0.7rem; color: {signal_title_c}; text-transform: uppercase; letter-spacing: 1.4px; margin-bottom: 10px; font-weight:500; }}
+.signal-value {{ font-size: 2.4rem; font-weight: 900; letter-spacing: -1px; }}
 
-.regime-pill  { display:inline-block; padding:6px 20px; border-radius:30px; font-size:1rem; font-weight:700; margin-top:6px; letter-spacing:.3px; }
-.regime-bull  { background:rgba(0,230,118,0.12); color:#00e676; border:1px solid rgba(0,230,118,0.4); box-shadow:0 0 20px rgba(0,230,118,0.1); }
-.regime-bear  { background:rgba(255,82,82,0.12); color:#ff5252; border:1px solid rgba(255,82,82,0.4); box-shadow:0 0 20px rgba(255,82,82,0.1); }
-.regime-neut  { background:rgba(255,215,64,0.10); color:#ffd740; border:1px solid rgba(255,215,64,0.35); box-shadow:0 0 20px rgba(255,215,64,0.08); }
+.regime-pill  {{ display:inline-block; padding:6px 20px; border-radius:30px; font-size:1rem; font-weight:700; margin-top:6px; letter-spacing:.3px; }}
+.regime-bull  {{ background:{regime_bull_bg}; color:#00c864; border:1px solid rgba(0,200,100,0.4); box-shadow:0 0 20px rgba(0,200,100,0.1); }}
+.regime-bear  {{ background:{regime_bear_bg}; color:#ff5252; border:1px solid rgba(255,82,82,0.4); box-shadow:0 0 20px rgba(255,82,82,0.1); }}
+.regime-neut  {{ background:{regime_neut_bg}; color:#d97706; border:1px solid rgba(180,140,0,0.35); box-shadow:0 0 20px rgba(180,140,0,0.08); }}
 
-.sig-row {
+.sig-row {{
     display:flex; align-items:center; justify-content:space-between;
     padding: 7px 12px; border-radius: 8px; margin-bottom: 4px;
-    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.05);
+    background: {sig_row_bg}; border: 1px solid {sig_row_bor};
     font-size: 0.8rem; transition: background .1s;
-}
-.sig-row:hover { background: rgba(255,255,255,0.045); }
-.sig-name { color: #94a3b8; font-weight: 500; }
-.sig-val  { color: #cbd5e1; font-family: 'SF Mono', monospace; font-size: 0.75rem; }
-.sig-pass { color: #00e676; font-size: 1rem; }
-.sig-fail { color: #ff5252; font-size: 1rem; }
+}}
+.sig-row:hover {{ background: {sig_row_hov}; }}
+.sig-name {{ color: {sig_name_c}; font-weight: 500; }}
+.sig-val  {{ color: {sig_val_c}; font-family: 'SF Mono', monospace; font-size: 0.75rem; }}
+.sig-pass {{ color: #00c864; font-size: 1rem; }}
+.sig-fail {{ color: #ff5252; font-size: 1rem; }}
 
-.section-header {
-    color: #e2e8f0; font-size: 0.9rem; font-weight: 600;
+.section-header {{
+    color: {section_c}; font-size: 0.9rem; font-weight: 600;
     margin: 1.6rem 0 0.7rem 0; padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid {section_bor};
     letter-spacing: .3px; display: flex; align-items: center; gap: 8px;
-}
-.score-outer { background: rgba(255,255,255,0.06); border-radius: 8px; height: 8px; width: 100%; margin: 8px 0 4px 0; overflow: hidden; }
-.score-inner { height: 100%; border-radius: 8px; transition: width .4s ease; }
-.page-title  { font-size: 1.55rem; font-weight: 800; color: #f1f5f9; letter-spacing: -0.5px; line-height: 1.2; }
-.page-sub    { font-size: 0.78rem; color: #475569; margin-top: 3px; font-weight: 400; }
+}}
+.score-outer {{ background: {'rgba(0,0,0,0.06)' if is_light else 'rgba(255,255,255,0.06)'}; border-radius: 8px; height: 8px; width: 100%; margin: 8px 0 4px 0; overflow: hidden; }}
+.score-inner {{ height: 100%; border-radius: 8px; transition: width .4s ease; }}
+.page-title  {{ font-size: 1.55rem; font-weight: 800; color: {page_title_c}; letter-spacing: -0.5px; line-height: 1.2; }}
+.page-sub    {{ font-size: 0.78rem; color: {page_sub_c}; margin-top: 3px; font-weight: 400; }}
 
-[data-baseweb="tab-list"] { background: rgba(255,255,255,0.03) !important; border-radius: 12px !important; padding: 4px !important; border: 1px solid rgba(255,255,255,0.06) !important; gap: 2px !important; }
-[data-baseweb="tab"]      { border-radius: 8px !important; font-weight: 600 !important; font-size: 0.85rem !important; color: #64748b !important; padding: 8px 20px !important; }
-[aria-selected="true"]    { background: rgba(255,255,255,0.08) !important; color: #e2e8f0 !important; }
+[data-baseweb="tab-list"] {{ background: {v['nav_bg']} !important; border-radius: 12px !important; padding: 4px !important; border: 1px solid {v['card_border']} !important; gap: 2px !important; }}
+[data-baseweb="tab"]      {{ border-radius: 8px !important; font-weight: 600 !important; font-size: 0.85rem !important; color: {tab_c} !important; padding: 8px 20px !important; }}
+[aria-selected="true"]    {{ background: {v['nav_sel']} !important; color: {tab_sel_c} !important; }}
 
-.green  { color: #00e676; } .red  { color: #ff5252; } .yellow { color: #ffd740; }
-.blue   { color: #60a5fa; } .purple { color: #a78bfa; } .white  { color: #f1f5f9; }
-#MainMenu, footer, header { visibility: hidden; }
-.stDataFrame { border-radius: 12px; overflow: hidden; }
+.green  {{ color: #00c864; }} .red  {{ color: #ff5252; }} .yellow {{ color: #d97706; }}
+.blue   {{ color: #2563eb; }} .purple {{ color: #7c3aed; }} .white  {{ color: {page_title_c}; }}
+#MainMenu, footer, header {{ visibility: hidden; }}
+.stDataFrame {{ border-radius: 12px; overflow: hidden; }}
+
+/* Mobile responsive */
+@media (max-width: 768px) {{
+    .block-container {{ padding: 0.5rem 0.8rem 2rem 0.8rem; }}
+    .metric-value {{ font-size: 1.3rem; }}
+    .signal-value {{ font-size: 1.8rem; }}
+    .page-title {{ font-size: 1.1rem; }}
+    .glass-card {{ padding: 12px 14px; }}
+    .metric-card {{ padding: 12px 10px; }}
+    div[data-testid="column"] {{ min-width: 0 !important; }}
+}}
+@media (max-width: 480px) {{
+    .metric-label {{ font-size: 0.58rem; letter-spacing: 0.8px; }}
+    .metric-value {{ font-size: 1.1rem; }}
+    .sig-row {{ padding: 5px 8px; font-size: 0.72rem; }}
+    .section-header {{ font-size: 0.8rem; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -180,16 +242,27 @@ def _regime_color(label: str) -> str:
 # 图表
 # ──────────────────────────────────────────────────────────────
 
+def _chart_colors():
+    t = st.session_state.get("_theme", "dark")
+    if t == "light":
+        return "#ffffff", "rgba(0,0,0,0.06)", "#475569", "#f1f5f9", "#1e293b"
+    return "#080c14", "rgba(255,255,255,0.05)", "#94a3b8", "#1e2535", "#334155"
+
 CHART_BG   = "#080c14"
 GRID_COLOR = "rgba(255,255,255,0.05)"
 
+def _gc() -> str:
+    _, grid, *_ = _chart_colors()
+    return grid
+
 def _base_layout(**kw) -> dict:
+    bg, grid, font_c, hover_bg, hover_bor = _chart_colors()
     return dict(
-        paper_bgcolor=CHART_BG, plot_bgcolor=CHART_BG,
-        font=dict(color="#94a3b8", size=11, family="Inter"),
+        paper_bgcolor=bg, plot_bgcolor=bg,
+        font=dict(color=font_c, size=11, family="Inter"),
         margin=dict(l=8, r=8, t=44, b=8),
         hovermode="x unified",
-        hoverlabel=dict(bgcolor="#1e2535", bordercolor="#334155", font_size=12),
+        hoverlabel=dict(bgcolor=hover_bg, bordercolor=hover_bor, font_size=12),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
         **kw,
@@ -261,12 +334,12 @@ def candle_chart(df: pd.DataFrame, trades: list, ticker: str) -> go.Figure:
 
     layout = _base_layout(height=680)
     layout["shapes"] = shapes
-    layout["xaxis"]  = dict(rangeslider=dict(visible=False), gridcolor=GRID_COLOR, showgrid=True, type="date")
-    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, showgrid=True)
-    layout["xaxis2"] = dict(gridcolor=GRID_COLOR, showgrid=True)
-    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, showgrid=True, showticklabels=False)
-    layout["xaxis3"] = dict(gridcolor=GRID_COLOR, showgrid=True)
-    layout["yaxis3"] = dict(gridcolor=GRID_COLOR, showgrid=True, range=[0,100],
+    layout["xaxis"]  = dict(rangeslider=dict(visible=False), gridcolor=_gc(), showgrid=True, type="date")
+    layout["yaxis"]  = dict(gridcolor=_gc(), showgrid=True)
+    layout["xaxis2"] = dict(gridcolor=_gc(), showgrid=True)
+    layout["yaxis2"] = dict(gridcolor=_gc(), showgrid=True, showticklabels=False)
+    layout["xaxis3"] = dict(gridcolor=_gc(), showgrid=True)
+    layout["yaxis3"] = dict(gridcolor=_gc(), showgrid=True, range=[0,100],
                             tickvals=[30,50,70], title="RSI")
     fig.update_layout(**layout)
     fig.update_xaxes(
@@ -305,10 +378,10 @@ def macd_signal_chart(df: pd.DataFrame, min_conf: int) -> go.Figure:
                   annotation_position="top right", row=2, col=1)
 
     layout = _base_layout(height=380)
-    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, title="MACD")
-    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, title="得分", range=[0,14],
+    layout["yaxis"]  = dict(gridcolor=_gc(), title="MACD")
+    layout["yaxis2"] = dict(gridcolor=_gc(), title="得分", range=[0,14],
                             tickvals=[0,3,6,9,12,14])
-    layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["xaxis2"] = dict(gridcolor=_gc())
     fig.update_layout(**layout)
     return fig
 
@@ -332,9 +405,9 @@ def stoch_cci_chart(df: pd.DataFrame) -> go.Figure:
     fig.add_hline(y=-100, line=dict(color="rgba(0,230,118,0.5)", width=1, dash="dot"), row=2, col=1)
     fig.add_hline(y=0,    line=dict(color="rgba(255,255,255,0.2)", width=1),            row=2, col=1)
     layout = _base_layout(height=360)
-    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, range=[0,100], title="Stoch %")
-    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, title="CCI")
-    layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["yaxis"]  = dict(gridcolor=_gc(), range=[0,100], title="Stoch %")
+    layout["yaxis2"] = dict(gridcolor=_gc(), title="CCI")
+    layout["xaxis2"] = dict(gridcolor=_gc())
     fig.update_layout(**layout)
     return fig
 
@@ -401,9 +474,9 @@ def equity_chart(df: pd.DataFrame, res: dict = None, best_key: str = "equity") -
     fig.add_trace(go.Bar(x=df.index, y=dd, marker_color=dd_colors,
         marker_opacity=0.7, name="回撤 %"), row=2, col=1)
     layout = _base_layout(height=460)
-    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, tickprefix="$")
-    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="回撤")
-    layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["yaxis"]  = dict(gridcolor=_gc(), tickprefix="$")
+    layout["yaxis2"] = dict(gridcolor=_gc(), ticksuffix="%", title="回撤")
+    layout["xaxis2"] = dict(gridcolor=_gc())
     layout["legend"] = dict(orientation="h", y=1.08, x=0, font=dict(size=11))
     fig.update_layout(**layout)
     return fig
@@ -423,8 +496,8 @@ def rolling_sharpe_chart(df: pd.DataFrame, is_daily: bool) -> go.Figure:
                   annotation_text="Sharpe=1", annotation_font_color="#00e676")
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", width=1))
     fig.update_layout(**_base_layout(height=220),
-                      yaxis=dict(gridcolor=GRID_COLOR, title="Sharpe"),
-                      xaxis=dict(gridcolor=GRID_COLOR))
+                      yaxis=dict(gridcolor=_gc(), title="Sharpe"),
+                      xaxis=dict(gridcolor=_gc()))
     return fig
 
 
@@ -464,8 +537,8 @@ def regime_bar(df: pd.DataFrame) -> go.Figure:
         text=vc["Pct"].map(lambda x: f"{x}%"), textposition="outside",
         textfont=dict(size=12, color="#e2e8f0")))
     fig.update_layout(**_base_layout(height=240, showlegend=False),
-                      yaxis=dict(title="占比 %", gridcolor=GRID_COLOR),
-                      xaxis=dict(gridcolor=GRID_COLOR))
+                      yaxis=dict(title="占比 %", gridcolor=_gc()),
+                      xaxis=dict(gridcolor=_gc()))
     return fig
 
 
@@ -484,8 +557,8 @@ def regime_return_chart(df: pd.DataFrame, n_states: int) -> go.Figure:
     fig = go.Figure(data=data)
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.3)", width=1))
     fig.update_layout(**_base_layout(height=280, showlegend=False),
-                      yaxis=dict(gridcolor=GRID_COLOR, ticksuffix="%", title="单bar收益率 %"),
-                      xaxis=dict(gridcolor=GRID_COLOR))
+                      yaxis=dict(gridcolor=_gc(), ticksuffix="%", title="单bar收益率 %"),
+                      xaxis=dict(gridcolor=_gc()))
     return fig
 
 
@@ -506,10 +579,10 @@ def trade_analytics_chart(trades: list) -> go.Figure:
     fig.add_trace(go.Histogram(x=tdf["hold_bars"], nbinsx=15,
         marker_color="#a78bfa", marker_opacity=0.8, name="持仓时长"), row=1, col=2)
     layout = _base_layout(height=280)
-    layout.update({"yaxis": dict(gridcolor=GRID_COLOR, tickprefix="$", title="PnL"),
-                   "yaxis2": dict(gridcolor=GRID_COLOR, title="笔数"),
-                   "xaxis": dict(gridcolor=GRID_COLOR, title="交易序号"),
-                   "xaxis2": dict(gridcolor=GRID_COLOR, title="Bars"),
+    layout.update({"yaxis": dict(gridcolor=_gc(), tickprefix="$", title="PnL"),
+                   "yaxis2": dict(gridcolor=_gc(), title="笔数"),
+                   "xaxis": dict(gridcolor=_gc(), title="交易序号"),
+                   "xaxis2": dict(gridcolor=_gc(), title="Bars"),
                    "showlegend": False})
     fig.update_layout(**layout)
     return fig
@@ -529,9 +602,9 @@ def relative_alpha_chart(df: pd.DataFrame) -> go.Figure:
                   annotation_text="平价线 (1.0)", annotation_font_color="#94a3b8",
                   annotation_position="top right")
     fig.update_layout(**_base_layout(height=220),
-                      yaxis=dict(gridcolor=GRID_COLOR, title="策略/BH 倍数",
+                      yaxis=dict(gridcolor=_gc(), title="策略/BH 倍数",
                                  tickformat=".2f"),
-                      xaxis=dict(gridcolor=GRID_COLOR))
+                      xaxis=dict(gridcolor=_gc()))
     return fig
 
 
@@ -548,8 +621,8 @@ def underwater_chart(df: pd.DataFrame) -> go.Figure:
     fig.add_hline(y=-10, line=dict(color="rgba(255,82,82,0.5)", width=1, dash="dot"),
                   annotation_text="-10%", annotation_font_color="#ff5252")
     fig.update_layout(**_base_layout(height=200),
-                      yaxis=dict(gridcolor=GRID_COLOR, ticksuffix="%", title="回撤"),
-                      xaxis=dict(gridcolor=GRID_COLOR))
+                      yaxis=dict(gridcolor=_gc(), ticksuffix="%", title="回撤"),
+                      xaxis=dict(gridcolor=_gc()))
     return fig
 
 
@@ -620,10 +693,10 @@ def regime_attribution_chart(df: pd.DataFrame, trades: list) -> go.Figure:
         text=[f"{v:.0f}% ({c}笔)" for v, c in zip(grp["win_r"], grp["count"])],
         textposition="outside", textfont=dict(size=10), name="胜率"), row=1, col=2)
     layout = _base_layout(height=max(200, len(grp)*50+80))
-    layout["xaxis"]  = dict(gridcolor=GRID_COLOR, tickprefix="$", title="平均PnL")
-    layout["xaxis2"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="胜率", range=[0,110])
-    layout["yaxis"]  = dict(gridcolor=GRID_COLOR)
-    layout["yaxis2"] = dict(gridcolor=GRID_COLOR)
+    layout["xaxis"]  = dict(gridcolor=_gc(), tickprefix="$", title="平均PnL")
+    layout["xaxis2"] = dict(gridcolor=_gc(), ticksuffix="%", title="胜率", range=[0,110])
+    layout["yaxis"]  = dict(gridcolor=_gc())
+    layout["yaxis2"] = dict(gridcolor=_gc())
     layout["showlegend"] = False
     fig.update_layout(**layout)
     return fig
@@ -656,12 +729,12 @@ def exit_attribution_chart(exit_attr: dict) -> go.Figure:
         text=[f"{v:.0f}%" for v in win_rates], textposition="outside",
         textfont=dict(size=10), name="胜率"), row=1, col=3)
     layout = _base_layout(height=300)
-    layout["xaxis"]  = dict(gridcolor=GRID_COLOR)
-    layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
-    layout["xaxis3"] = dict(gridcolor=GRID_COLOR)
-    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, title="次数")
-    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, tickprefix="$", title="平均PnL")
-    layout["yaxis3"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="胜率", range=[0,110])
+    layout["xaxis"]  = dict(gridcolor=_gc())
+    layout["xaxis2"] = dict(gridcolor=_gc())
+    layout["xaxis3"] = dict(gridcolor=_gc())
+    layout["yaxis"]  = dict(gridcolor=_gc(), title="次数")
+    layout["yaxis2"] = dict(gridcolor=_gc(), tickprefix="$", title="平均PnL")
+    layout["yaxis3"] = dict(gridcolor=_gc(), ticksuffix="%", title="胜率", range=[0,110])
     layout["showlegend"] = False
     fig.update_layout(**layout)
     return fig
@@ -692,10 +765,10 @@ def top_trade_chart(trades: list) -> go.Figure:
     fig.add_hline(y=80, line=dict(color="rgba(255,215,64,0.5)", width=1, dash="dot"),
                   annotation_text="80%", annotation_font_color="#ffd740", row=1, col=2)
     layout = _base_layout(height=280)
-    layout["xaxis"]  = dict(gridcolor=GRID_COLOR)
-    layout["xaxis2"] = dict(gridcolor=GRID_COLOR)
-    layout["yaxis"]  = dict(gridcolor=GRID_COLOR, tickprefix="$", title="PnL")
-    layout["yaxis2"] = dict(gridcolor=GRID_COLOR, ticksuffix="%", title="累计贡献 %")
+    layout["xaxis"]  = dict(gridcolor=_gc())
+    layout["xaxis2"] = dict(gridcolor=_gc())
+    layout["yaxis"]  = dict(gridcolor=_gc(), tickprefix="$", title="PnL")
+    layout["yaxis2"] = dict(gridcolor=_gc(), ticksuffix="%", title="累计贡献 %")
     layout["showlegend"] = False
     fig.update_layout(**layout)
     return fig
@@ -714,8 +787,8 @@ def hold_duration_chart(trades: list, is_daily: bool) -> go.Figure:
     fig.add_vline(x=avg_h, line=dict(color="#ffd740", width=1.5, dash="dash"),
                   annotation_text=f"均值 {avg_h:.1f}", annotation_font_color="#ffd740")
     fig.update_layout(**_base_layout(height=220),
-                      xaxis=dict(gridcolor=GRID_COLOR, title=f"持仓 ({unit})"),
-                      yaxis=dict(gridcolor=GRID_COLOR, title="笔数"),
+                      xaxis=dict(gridcolor=_gc(), title=f"持仓 ({unit})"),
+                      yaxis=dict(gridcolor=_gc(), title="笔数"),
                       showlegend=False)
     return fig
 
@@ -751,8 +824,8 @@ def macro_by_regime_chart(df: pd.DataFrame) -> go.Figure:
         **_base_layout(height=320),
         barmode="group",
         title=dict(text="各 Regime 宏观特征均值（z-score）", font=dict(size=12, color="#94a3b8"), x=0),
-        yaxis=dict(title="z-score", gridcolor="rgba(255,255,255,0.05)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+        yaxis=dict(title="z-score", gridcolor=_gc()),
+        xaxis=dict(gridcolor=_gc()),
     )
     return fig
 
@@ -798,8 +871,8 @@ def macro_timeseries_chart(df: pd.DataFrame) -> go.Figure:
         **_base_layout(height=300),
         title=dict(text="宏观指标时序（z-score · 背景色=Regime）",
                    font=dict(size=12, color="#94a3b8"), x=0),
-        yaxis=dict(title="z-score", gridcolor="rgba(255,255,255,0.05)"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+        yaxis=dict(title="z-score", gridcolor=_gc()),
+        xaxis=dict(gridcolor=_gc()),
     )
     return fig
 
@@ -960,9 +1033,9 @@ def render_xgb_panel():
         fig_shap.update_layout(
             height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=10, r=60, t=10, b=10),
-            xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=True,
+            xaxis=dict(gridcolor=_gc(), zeroline=True,
                        zerolinecolor="rgba(255,255,255,0.2)"),
-            yaxis=dict(gridcolor="rgba(255,255,255,0.05)", tickfont=dict(size=10, color="#94a3b8")),
+            yaxis=dict(gridcolor=_gc(), tickfont=dict(size=10, color="#94a3b8")),
             showlegend=False, font=dict(color="#94a3b8"),
         )
         st.plotly_chart(fig_shap, use_container_width=True)
@@ -983,8 +1056,8 @@ def render_xgb_panel():
         fig_prob.update_layout(
             height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
-            yaxis=dict(gridcolor="rgba(255,255,255,0.05)", tickformat=".0%", range=[0, 1]),
+            xaxis=dict(gridcolor=_gc()),
+            yaxis=dict(gridcolor=_gc(), tickformat=".0%", range=[0, 1]),
             showlegend=False, font=dict(color="#94a3b8"),
         )
         st.plotly_chart(fig_prob, use_container_width=True)
@@ -1673,8 +1746,38 @@ def render_signals_tab() -> None:
     if errors:
         st.error(f"信号生成错误：{errors}")
 
-    ticker_labels = {"GC=F": "🥇 Gold", "SI=F": "🥈 Silver", "AAPL": "🍎 Apple"}
-    for ticker in ["GC=F", "SI=F", "AAPL"]:
+    ticker_labels = {
+        "AAPL": "🍎 Apple",   "GC=F": "🥇 Gold",   "SI=F": "🥈 Silver",
+        "CL=F": "🛢 Oil",     "NVDA": "🟩 NVDA",    "META": "🔵 META",
+        "AMZN": "📦 AMZN",   "GOOG": "🔍 GOOG",    "MSFT": "🪟 MSFT",
+        "TSLA": "⚡ TSLA",    "HOOD": "🪶 HOOD",    "SPY":  "📊 SPY",
+        "FXI":  "🇨🇳 FXI",    "PLTR": "🛡 PLTR",
+    }
+    all_signal_tickers = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
+
+    # Show quick summary grid first
+    sig_available = [t for t in all_signal_tickers if signals.get(t)]
+    if sig_available:
+        st.markdown('<div class="section-header">⚡ 全资产信号速览</div>', unsafe_allow_html=True)
+        _grid_cols = st.columns(min(7, len(sig_available)), gap="small")
+        for _i, _t in enumerate(sig_available):
+            _s = signals[_t]
+            _af = _s.get("action_if_flat", "—")
+            _rc = _s.get("regime", "—")
+            _cl = _s.get("close", 0)
+            _af_c = {"ENTER": "#00c864", "HOLD": "#60a5fa", "EXIT": "#ff5252",
+                     "WATCH": "#d97706", "STAY_OUT": "#475569"}.get(_af, "#94a3b8")
+            _pc = _pill(_rc)
+            with _grid_cols[_i % 7]:
+                st.markdown(
+                    f'<div class="metric-card" style="padding:10px 8px">'
+                    f'<div style="font-size:0.65rem;color:#475569;margin-bottom:4px">{ticker_labels.get(_t, _t)}</div>'
+                    f'<div style="font-size:0.9rem;font-weight:800;color:{_af_c}">{_af}</div>'
+                    f'<div style="font-size:0.6rem;color:#475569;margin-top:3px">${_cl:,.1f}</div>'
+                    f'</div>', unsafe_allow_html=True)
+        st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
+
+    for ticker in all_signal_tickers:
         sig = signals.get(ticker)
         if not sig:
             continue
@@ -1817,8 +1920,8 @@ def portfolio_equity_chart(eq_dict: dict) -> go.Figure:
         title=dict(
             text=f"等权组合   Return {total_ret:+.1f}%   Sharpe {sharpe:.2f}   MaxDD {max_dd:.1f}%",
             font=dict(size=12, color="#94a3b8"), x=0, xanchor="left"),
-        yaxis=dict(gridcolor=GRID_COLOR, tickprefix="$"),
-        xaxis=dict(gridcolor=GRID_COLOR))
+        yaxis=dict(gridcolor=_gc(), tickprefix="$"),
+        xaxis=dict(gridcolor=_gc()))
     return fig
 
 
@@ -1894,6 +1997,47 @@ def render_portfolio_tab() -> None:
     cc2.markdown(_metric("动态权重收益",    f"{ptr_d:+.1f}%", f"Sharpe {psh_d:.2f}  MaxDD {pmdd_d:.1f}%", "green" if ptr_d>0 else "red"), unsafe_allow_html=True)
     cc3.markdown(_metric("波动率平价收益",  f"{ptr_v:+.1f}%", f"Sharpe {psh_v:.2f}  MaxDD {pmdd_v:.1f}%", "green" if ptr_v>0 else "red"), unsafe_allow_html=True)
 
+    # ── 自定义权重组合 ────────────────────────────────────────
+    st.markdown('<div class="section-header">⚖️ 自定义权重组合</div>', unsafe_allow_html=True)
+    with st.expander("调整各资产权重（拖动滑块）", expanded=False):
+        _tick_emoji = {
+            "AAPL": "🍎", "GC=F": "🥇", "SI=F": "🥈", "CL=F": "🛢",
+            "NVDA": "🟩", "META": "🔵", "AMZN": "📦", "GOOG": "🔍",
+            "MSFT": "🪟", "TSLA": "⚡", "HOOD": "🪶", "SPY":  "📊",
+            "FXI":  "🇨🇳", "PLTR": "🛡",
+        }
+        _slider_cols = st.columns(2, gap="medium")
+        _raw_w = {}
+        for _i, _t in enumerate(loaded):
+            with _slider_cols[_i % 2]:
+                _default_w = int(round(100.0 / len(loaded)))
+                _raw_w[_t] = st.slider(
+                    f"{_tick_emoji.get(_t,'')}{_t}",
+                    min_value=0, max_value=100,
+                    value=st.session_state.get(f"_pw_{_t}", _default_w),
+                    step=5, key=f"_pw_{_t}",
+                    format="%d%%",
+                )
+        _total_w = sum(_raw_w.values())
+        if _total_w > 0:
+            _cust_w = {_t: _raw_w[_t] / _total_w for _t in loaded}
+            port_cust = sum(rets[_t] * _cust_w[_t] for _t in loaded) * STARTING_CAP
+            ptr_c, psh_c, pmdd_c, pcal_c2, pann_c = _port_metrics(port_cust)
+            _wc1, _wc2, _wc3, _wc4 = st.columns(4, gap="small")
+            _wc1.markdown(_metric("自定义收益", f"{ptr_c:+.1f}%", f"年化 {pann_c:+.1f}%", "green" if ptr_c>0 else "red"), unsafe_allow_html=True)
+            _wc2.markdown(_metric("Sharpe", f"{psh_c:.2f}", "", "green" if psh_c>1 else "yellow"), unsafe_allow_html=True)
+            _wc3.markdown(_metric("MaxDD", f"{pmdd_c:.1f}%", "", "red"), unsafe_allow_html=True)
+            _wc4.markdown(_metric("Calmar", f"{pcal_c2:.2f}", "", "green" if pcal_c2>1 else "yellow"), unsafe_allow_html=True)
+            # show weights summary
+            _w_items = sorted(_cust_w.items(), key=lambda x: -x[1])
+            st.markdown(
+                '<div style="font-size:0.72rem;color:#475569;margin-top:8px">'
+                + "  ".join(f'<b style="color:#94a3b8">{_t}</b> {_v*100:.1f}%' for _t, _v in _w_items if _v > 0.001)
+                + f'  <span style="color:{"#00c864" if abs(_total_w-100)<0.1 else "#d97706"}">总计 {_total_w}%</span>'
+                + '</div>', unsafe_allow_html=True)
+        else:
+            st.warning("请至少为一个资产设置非零权重")
+
     # ── 组合资金曲线 ─────────────────────────────────────────
     fig_port = go.Figure()
     COLORS = ["#ffd740","#94a3b8","#60a5fa","#a78bfa","#34d399","#fb923c",
@@ -1916,8 +2060,8 @@ def render_portfolio_tab() -> None:
         fill="tozeroy", fillcolor="rgba(96,165,250,0.04)"))
     _port_layout = _base_layout(height=420)
     _port_layout["legend"] = dict(orientation="h", y=1.06, x=0, font=dict(size=10))
-    _port_layout["yaxis"] = dict(gridcolor=GRID_COLOR, tickprefix="$")
-    _port_layout["xaxis"] = dict(gridcolor=GRID_COLOR)
+    _port_layout["yaxis"] = dict(gridcolor=_gc(), tickprefix="$")
+    _port_layout["xaxis"] = dict(gridcolor=_gc())
     fig_port.update_layout(**_port_layout)
     st.plotly_chart(fig_port, use_container_width=True)
 
@@ -1987,7 +2131,26 @@ def render_portfolio_tab() -> None:
 # 主入口
 # ──────────────────────────────────────────────────────────────
 
+def _asset_last_date(ticker: str) -> str:
+    path = os.path.join(RESULTS_DIR, f"{_safe_filename(ticker)}.pkl")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            r = pickle.load(f)
+        last_dt = r["df"].index[-1]
+        return pd.Timestamp(last_dt).strftime("%m/%d")
+    except Exception:
+        return ""
+
+
 def main() -> None:
+    # Theme must be initialized before CSS injection
+    if "_theme" not in st.session_state:
+        st.session_state["_theme"] = "dark"
+
+    _inject_css()
+
     logo = _logo_b64()
     logo_html = (
         f'<img src="data:image/png;base64,{logo}" '
@@ -1996,7 +2159,7 @@ def main() -> None:
         if logo else ""
     )
 
-    hc1, hc2 = st.columns([8, 1])
+    hc1, hc2 = st.columns([7, 2])
     with hc1:
         st.markdown(f"""
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:2px">
@@ -2012,27 +2175,32 @@ def main() -> None:
         </div>""", unsafe_allow_html=True)
     with hc2:
         st.write("")
-        st.write("")
-        if st.button("🔄 刷新", type="primary", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+        _btn_c1, _btn_c2 = st.columns(2, gap="small")
+        with _btn_c1:
+            if st.button("🔄 刷新", type="primary", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+        with _btn_c2:
+            _cur_theme = st.session_state.get("_theme", "dark")
+            _theme_label = "☀️ 浅色" if _cur_theme == "dark" else "🌙 深色"
+            if st.button(_theme_label, use_container_width=True):
+                st.session_state["_theme"] = "light" if _cur_theme == "dark" else "dark"
+                st.rerun()
 
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
 
-    NAV_OPTIONS = [
-        "📡  今日信号", "🌐  组合",
-        "🍎  AAPL", "🥇  Gold", "🥈  Silver", "🛢  Oil",
-        "🟩  NVDA", "🔵  META", "📦  AMZN",
-        "🔍  GOOG", "🪟  MSFT", "⚡  TSLA",
-        "🪶  HOOD", "📊  SPY",  "🇨🇳  FXI", "🛡  PLTR",
+    # Build nav labels with data timestamps
+    _TICKER_MAP_BASE = [
+        ("🍎  AAPL", "AAPL"), ("🥇  Gold", "GC=F"), ("🥈  Silver", "SI=F"),
+        ("🛢  Oil",  "CL=F"), ("🟩  NVDA", "NVDA"), ("🔵  META",  "META"),
+        ("📦  AMZN", "AMZN"), ("🔍  GOOG", "GOOG"), ("🪟  MSFT",  "MSFT"),
+        ("⚡  TSLA", "TSLA"), ("🪶  HOOD", "HOOD"), ("📊  SPY",   "SPY"),
+        ("🇨🇳  FXI", "FXI"),  ("🛡  PLTR", "PLTR"),
     ]
-    NAV_TICKER = {
-        "🍎  AAPL": "AAPL", "🥇  Gold": "GC=F", "🥈  Silver": "SI=F",
-        "🛢  Oil":  "CL=F", "🟩  NVDA": "NVDA", "🔵  META":  "META",
-        "📦  AMZN": "AMZN", "🔍  GOOG": "GOOG", "🪟  MSFT":  "MSFT",
-        "⚡  TSLA": "TSLA", "🪶  HOOD": "HOOD", "📊  SPY":   "SPY",
-        "🇨🇳  FXI": "FXI",  "🛡  PLTR": "PLTR",
-    }
+    NAV_TICKER = {label: tick for label, tick in _TICKER_MAP_BASE}
+
+    NAV_OPTIONS = ["📡  今日信号", "🌐  组合"] + [label for label, _ in _TICKER_MAP_BASE]
+
     _active = st.radio(
         "导航", NAV_OPTIONS,
         index=st.session_state.get("_nav_idx", 0),
@@ -2041,6 +2209,17 @@ def main() -> None:
         key="_nav_radio",
     )
     st.session_state["_nav_idx"] = NAV_OPTIONS.index(_active)
+
+    # Show data freshness bar for asset pages
+    if _active in NAV_TICKER:
+        _tick = NAV_TICKER[_active]
+        _last = _asset_last_date(_tick)
+        if _last:
+            st.markdown(
+                f'<div style="font-size:0.65rem;color:#475569;margin-bottom:0.2rem">'
+                f'📅 数据更新至 <b style="color:#64748b">{_last}</b></div>',
+                unsafe_allow_html=True)
+
     st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
 
     if _active == "📡  今日信号":
