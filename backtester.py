@@ -94,7 +94,7 @@ HIGH_VOL_ATR: Dict[str, float] = {
 
 TICKER_PARAMS: Dict[str, Dict] = {
     "AAPL": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
-    "GC=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
+    "GC=F": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
     "SI=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
     "CL=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
     "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
