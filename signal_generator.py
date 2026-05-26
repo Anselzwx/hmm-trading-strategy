@@ -190,7 +190,7 @@ def run():
     today     = datetime.now().strftime("%Y%m%d")
     out_path  = os.path.join(OUTPUT_DIR, f"signal_{today}.json")
 
-    tickers = ["GC=F", "SI=F", "AAPL"]
+    tickers = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
     signals = {}
     errors  = {}
 
@@ -224,7 +224,7 @@ def run():
         print(f"\n  {ticker:6s}  {sig['date']}  Close={sig['close']:.4f}")
         print(f"  Regime: {sig['regime']:15s}  State={sig['state']}  "
               f"bull_prob={sig['bull_prob']:.1%}  bear_prob={sig['bear_prob']:.1%}")
-        print(f"  Score:  {sig['signal_score']}/4  (min={sig['min_conf']})  "
+        print(f"  Score:  {sig['signal_score']}/14  (min={sig['min_conf']})  "
               f"ADX={sig['adx']:.1f}  (gate={sig['adx_entry']})  "
               f"Sideways={sig['sideways_score']}")
         if sig["vt_scale"] is not None:

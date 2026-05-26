@@ -95,9 +95,12 @@ def _inject_css():
     signal_cash_bor = "rgba(100,116,139,0.3)"
     signal_cash_sh  = "0 2px 8px rgba(0,0,0,0.06)" if is_light else "0 4px 24px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.04)"
     signal_title_c  = "#475569" if is_light else "#64748b"
-    regime_bull_bg  = "rgba(0,180,80,0.10)" if is_light else "rgba(0,230,118,0.12)"
-    regime_bear_bg  = "rgba(220,38,38,0.10)" if is_light else "rgba(255,82,82,0.12)"
-    regime_neut_bg  = "rgba(180,140,0,0.10)" if is_light else "rgba(255,215,64,0.10)"
+    regime_bull_bg  = "rgba(0,150,60,0.10)"  if is_light else "rgba(0,230,118,0.12)"
+    regime_bull_c   = "#006633"              if is_light else "#00c864"
+    regime_bear_bg  = "rgba(200,30,30,0.10)" if is_light else "rgba(255,82,82,0.12)"
+    regime_bear_c   = "#b91c1c"              if is_light else "#ff5252"
+    regime_neut_bg  = "rgba(146,100,0,0.10)" if is_light else "rgba(255,215,64,0.10)"
+    regime_neut_c   = "#92400e"              if is_light else "#d97706"
 
     st.markdown(f"""
 <style>
@@ -138,9 +141,9 @@ html, body, [class*="css"] {{ font-family: 'Inter', -apple-system, sans-serif; b
 .signal-value {{ font-size: 2.4rem; font-weight: 900; letter-spacing: -1px; }}
 
 .regime-pill  {{ display:inline-block; padding:6px 20px; border-radius:30px; font-size:1rem; font-weight:700; margin-top:6px; letter-spacing:.3px; }}
-.regime-bull  {{ background:{regime_bull_bg}; color:#00c864; border:1px solid rgba(0,200,100,0.4); box-shadow:0 0 20px rgba(0,200,100,0.1); }}
-.regime-bear  {{ background:{regime_bear_bg}; color:#ff5252; border:1px solid rgba(255,82,82,0.4); box-shadow:0 0 20px rgba(255,82,82,0.1); }}
-.regime-neut  {{ background:{regime_neut_bg}; color:#d97706; border:1px solid rgba(180,140,0,0.35); box-shadow:0 0 20px rgba(180,140,0,0.08); }}
+.regime-bull  {{ background:{regime_bull_bg}; color:{regime_bull_c}; border:1px solid {regime_bull_c}66; box-shadow:0 0 20px {regime_bull_bg}; }}
+.regime-bear  {{ background:{regime_bear_bg}; color:{regime_bear_c}; border:1px solid {regime_bear_c}66; box-shadow:0 0 20px {regime_bear_bg}; }}
+.regime-neut  {{ background:{regime_neut_bg}; color:{regime_neut_c}; border:1px solid {regime_neut_c}66; box-shadow:0 0 20px {regime_neut_bg}; }}
 
 .sig-row {{
     display:flex; align-items:center; justify-content:space-between;
@@ -1755,26 +1758,32 @@ def render_signals_tab() -> None:
     }
     all_signal_tickers = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
 
-    # Show quick summary grid first
+    # Show quick summary grid first — two rows of 7
     sig_available = [t for t in all_signal_tickers if signals.get(t)]
     if sig_available:
         st.markdown('<div class="section-header">⚡ 全资产信号速览</div>', unsafe_allow_html=True)
-        _grid_cols = st.columns(min(7, len(sig_available)), gap="small")
-        for _i, _t in enumerate(sig_available):
-            _s = signals[_t]
-            _af = _s.get("action_if_flat", "—")
-            _rc = _s.get("regime", "—")
-            _cl = _s.get("close", 0)
-            _af_c = {"ENTER": "#00c864", "HOLD": "#60a5fa", "EXIT": "#ff5252",
-                     "WATCH": "#d97706", "STAY_OUT": "#475569"}.get(_af, "#94a3b8")
-            _pc = _pill(_rc)
-            with _grid_cols[_i % 7]:
-                st.markdown(
-                    f'<div class="metric-card" style="padding:10px 8px">'
-                    f'<div style="font-size:0.65rem;color:#475569;margin-bottom:4px">{ticker_labels.get(_t, _t)}</div>'
-                    f'<div style="font-size:0.9rem;font-weight:800;color:{_af_c}">{_af}</div>'
-                    f'<div style="font-size:0.6rem;color:#475569;margin-top:3px">${_cl:,.1f}</div>'
-                    f'</div>', unsafe_allow_html=True)
+        _ACTION_COLOR = {"ENTER": "#00c864", "HOLD": "#60a5fa", "EXIT": "#ff5252",
+                         "WATCH": "#d97706", "STAY_OUT": "#475569"}
+        # Split into rows of 7
+        _COLS_PER_ROW = 7
+        for _row_start in range(0, len(sig_available), _COLS_PER_ROW):
+            _row_tickers = sig_available[_row_start:_row_start + _COLS_PER_ROW]
+            _grid_cols = st.columns(len(_row_tickers), gap="small")
+            for _i, _t in enumerate(_row_tickers):
+                _s  = signals[_t]
+                _af = _s.get("action_if_flat", "—")
+                _cl = _s.get("close", 0)
+                _bl = _s.get("is_bull", False)
+                _af_c  = _ACTION_COLOR.get(_af, "#94a3b8")
+                _reg_c = "#00c864" if _bl else "#ff5252"
+                with _grid_cols[_i]:
+                    st.markdown(
+                        f'<div class="metric-card" style="padding:10px 8px">'
+                        f'<div style="font-size:0.65rem;color:#475569;margin-bottom:4px">{ticker_labels.get(_t, _t)}</div>'
+                        f'<div style="font-size:0.9rem;font-weight:800;color:{_af_c}">{_af}</div>'
+                        f'<div style="font-size:0.58rem;color:{_reg_c};margin-top:2px">{"Bull" if _bl else "Bear"}</div>'
+                        f'<div style="font-size:0.6rem;color:#475569;margin-top:1px">${_cl:,.1f}</div>'
+                        f'</div>', unsafe_allow_html=True)
         st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
 
     for ticker in all_signal_tickers:
@@ -1887,42 +1896,6 @@ def render_signals_tab() -> None:
 # ──────────────────────────────────────────────────────────────
 # 组合面板
 # ──────────────────────────────────────────────────────────────
-
-def portfolio_equity_chart(eq_dict: dict) -> go.Figure:
-    tickers = list(eq_dict.keys())
-    idx     = list(eq_dict.values())[0].index
-    rets    = {t: eq_dict[t].reindex(idx, method="ffill").fillna(STARTING_CAP) / STARTING_CAP
-               for t in tickers}
-    port    = sum(rets[t] for t in tickers) / 3 * STARTING_CAP
-
-    fig = go.Figure()
-    colors = {"GC=F": "#ffd740", "SI=F": "#94a3b8", "AAPL": "#60a5fa"}
-    for t in tickers:
-        fig.add_trace(go.Scatter(
-            x=idx, y=rets[t] * STARTING_CAP,
-            mode="lines", name=t,
-            line=dict(color=colors.get(t, "#94a3b8"), width=1.2, dash="dot"),
-            opacity=0.6))
-    fig.add_trace(go.Scatter(
-        x=idx, y=port, mode="lines", name="组合（等权）",
-        line=dict(color="#00e676", width=2.5),
-        fill="tozeroy", fillcolor="rgba(0,230,118,0.05)"))
-
-    roll_max = port.cummax()
-    dd       = (port - roll_max) / roll_max * 100
-    total_ret  = (port.iloc[-1] / STARTING_CAP - 1) * 100
-    dr         = port.pct_change().dropna()
-    sharpe     = dr.mean() / dr.std() * np.sqrt(252)
-    max_dd     = dd.min()
-
-    fig.update_layout(
-        **_base_layout(height=380),
-        title=dict(
-            text=f"等权组合   Return {total_ret:+.1f}%   Sharpe {sharpe:.2f}   MaxDD {max_dd:.1f}%",
-            font=dict(size=12, color="#94a3b8"), x=0, xanchor="left"),
-        yaxis=dict(gridcolor=_gc(), tickprefix="$"),
-        xaxis=dict(gridcolor=_gc()))
-    return fig
 
 
 def render_portfolio_tab() -> None:
