@@ -559,9 +559,50 @@
         0.0,
         0.0
       ]
+    },
+    "AAPL": {
+      "ticker": "AAPL",
+      "date": "2026-05-22",
+      "close": 308.82,
+      "state": 1,
+      "regime": "Bull Run",
+      "is_bull": false,
+      "is_bear": false,
+      "signal_score": 4,
+      "min_conf": 3,
+      "adx": 60.63,
+      "adx_entry": 20,
+      "bull_prob": 0.0,
+      "bear_prob": 1.0,
+      "action_if_flat": "STAY_OUT",
+      "action_if_long": "HOLD",
+      "stop_pct": -0.12,
+      "vt_scale": null,
+      "sideways_score": 0,
+      "signal_details": {
+        "rsi_ok": false,
+        "momentum_ok": true,
+        "vol_ok": false,
+        "volume_ok": false,
+        "adx_ok": true,
+        "above_ema50": true,
+        "above_ema200": true,
+        "macd_ok": true,
+        "above_bb_mid": true,
+        "stoch_ok": false,
+        "williams_ok": false,
+        "cci_ok": true,
+        "obv_ok": true,
+        "drawdown_ok": true
+      },
+      "posterior": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
     }
   },
-  "errors": {
-    "AAPL": "HTTPSConnectionPool(host='financialmodelingprep.com', port=443): Max retries exceeded with url: /stable/historical-price-eod/full?symbol=AAPL&from=2008-01-01&to=2026-05-26&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1028)')))"
-  }
+  "errors": {}
 }
