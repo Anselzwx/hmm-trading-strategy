@@ -1747,7 +1747,9 @@ def render_signals_tab() -> None:
         unsafe_allow_html=True)
 
     if errors:
-        st.error(f"信号生成错误：{errors}")
+        with st.expander(f"⚠️ {len(errors)} 个资产信号生成失败（点击展开）", expanded=False):
+            for _t, _e in errors.items():
+                st.caption(f"**{_t}**: {_e[:120]}…")
 
     ticker_labels = {
         "AAPL": "🍎 Apple",   "GC=F": "🥇 Gold",   "SI=F": "🥈 Silver",
