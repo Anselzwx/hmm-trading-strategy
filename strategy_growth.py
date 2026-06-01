@@ -2,15 +2,16 @@
 strategy_growth.py — Per-asset optimal momentum/trend strategies for growth stocks.
 
 Each ticker uses the strategy with highest Calmar ratio from sensitivity analysis:
-  AAPL  → Price > EMA200          (Calmar 0.61, Return +3093%, MaxDD -34%)
-  NVDA  → 52-Week High >80%        (Calmar 0.94, Return +48446%, MaxDD -42%)
-  META  → EMA21>EMA50 + EMA200斜率>0 (Calmar 0.79, Return +1266%, MaxDD -26%, 近3年+69%)
-  AMZN  → EMA50 > EMA200           (Calmar 0.50, Return +2294%, MaxDD -38%)
-  GOOG  → 52-Week High >80%        (Calmar 0.54, Return +2323%, MaxDD -35%)
-  MSFT  → 52-Week High >80%        (Calmar 0.38, Return +1002%, MaxDD -36%)
-  TSLA  → Buy & Hold               (no strategy beats B&H, stay invested)
-  HOOD  → 52-Week High >75%        (Calmar 1.32, Return +503%, MaxDD -34%)
-  PLTR  → Price > EMA200           (Calmar 1.33, Return +2303%, MaxDD -57%)
+  AAPL  → Price > EMA200                         (Calmar 0.61, Return +3093%, MaxDD -34%)
+  NVDA  → 52-Week High >80%                       (Calmar 0.94, Return +48446%, MaxDD -42%)
+  META  → EMA21>EMA50 + EMA200slope>0             (Calmar 0.93, Return +1207%, MaxDD -22%, 近3年+115%)
+          + Entry gate: RSI>58 AND EMA21slope>1%/5d (filters low-momentum entries)
+  AMZN  → EMA50 > EMA200                          (Calmar 0.50, Return +2294%, MaxDD -38%)
+  GOOG  → 52-Week High >80%                        (Calmar 0.54, Return +2323%, MaxDD -35%)
+  MSFT  → 52-Week High >80%                        (Calmar 0.38, Return +1002%, MaxDD -36%)
+  TSLA  → Buy & Hold                               (no strategy beats B&H, stay invested)
+  HOOD  → 52-Week High >75%                        (Calmar 1.32, Return +503%, MaxDD -34%)
+  PLTR  → Price > EMA200                           (Calmar 1.33, Return +2303%, MaxDD -57%)
 """
 from __future__ import annotations
 
@@ -20,11 +21,19 @@ from typing import Dict
 
 from backtester import STARTING_CAP, FRICTION_PCT, LEVERAGE, _ema, compute_indicators
 
+
+def _rsi(series: pd.Series, n: int = 14) -> pd.Series:
+    delta = series.diff()
+    gain  = delta.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    loss  = (-delta.clip(upper=0)).ewm(alpha=1 / n, adjust=False).mean()
+    rs    = gain / loss.replace(0, float("nan"))
+    return 100 - 100 / (1 + rs)
+
 # ── 每个成长股对应的策略类型 ──────────────────────────────────
 GROWTH_STRATEGY: Dict[str, str] = {
     "AAPL": "ema200",
     "NVDA": "52wh80",
-    "META": "ema21_50_slope",
+    "META": "ema21_50_slope_rsi",
     "AMZN": "ema50_200",
     "GOOG": "52wh80",
     "MSFT": "52wh80",
@@ -34,13 +43,14 @@ GROWTH_STRATEGY: Dict[str, str] = {
 }
 
 STRATEGY_LABELS: Dict[str, str] = {
-    "ema200":         "价格 > EMA200",
-    "52wh80":         "近52周高点 >80%",
-    "ema21_50":       "EMA21 > EMA50",
-    "ema21_50_slope": "EMA21>EMA50 + EMA200趋势向上",
-    "ema50_200":      "EMA50 > EMA200",
-    "buyhold":        "买入持有",
-    "52wh75":         "近52周高点 >75%",
+    "ema200":              "价格 > EMA200",
+    "52wh80":              "近52周高点 >80%",
+    "ema21_50":            "EMA21 > EMA50",
+    "ema21_50_slope":      "EMA21>EMA50 + EMA200趋势向上",
+    "ema21_50_slope_rsi":  "EMA21>EMA50 + EMA200趋势向上 + RSI动量确认",
+    "ema50_200":           "EMA50 > EMA200",
+    "buyhold":             "买入持有",
+    "52wh75":              "近52周高点 >75%",
 }
 
 
@@ -67,10 +77,19 @@ def _compute_metrics(eq: pd.Series, trades: list) -> Dict:
     }
 
 
-def _simulate_signal(df: pd.DataFrame, signal: pd.Series, stop: float = -0.20) -> Dict:
+def _simulate_signal(
+    df: pd.DataFrame,
+    signal: pd.Series,
+    stop: float = -0.20,
+    entry_gate: pd.Series | None = None,
+) -> Dict:
     """Simulate long-only strategy from a binary signal series (1=hold, 0=flat).
     Entry: next open after signal flips to 1.
     Exit:  next open after signal flips to 0, or stop-loss intrabar.
+
+    entry_gate: optional boolean series; when provided, an entry is only taken on
+    a fresh signal crossover (0→1) if the gate was also 1 at that bar.
+    Gate is NOT used to exit — it only blocks low-quality entries.
     """
     cap       = float(STARTING_CAP)
     in_trade  = False
@@ -81,7 +100,10 @@ def _simulate_signal(df: pd.DataFrame, signal: pd.Series, stop: float = -0.20) -
     entry_ts  = None
     hold_bars = 0
 
-    sig_vals = signal.reindex(df.index).fillna(0).values
+    sig_vals  = signal.reindex(df.index).fillna(0).values
+    gate_vals = (entry_gate.reindex(df.index).fillna(0).values
+                 if entry_gate is not None
+                 else None)
     opens    = df["Open"].values
     closes   = df["Close"].values
     idx      = df.index
@@ -128,11 +150,19 @@ def _simulate_signal(df: pd.DataFrame, signal: pd.Series, stop: float = -0.20) -
 
         # Entry: signal was 1 yesterday, not yet in trade
         if not in_trade and i > 0 and sig_vals[i - 1] == 1:
-            entry_p  = opens[i] * (1 + FRICTION_PCT)
-            shares   = cap / entry_p
-            in_trade = True
-            entry_ts = idx[i]
-            hold_bars = 0
+            # If entry_gate provided, only enter on fresh crossover (sig flipped 0→1)
+            # when the gate is also satisfied at crossover bar
+            is_fresh = (i < 2) or (sig_vals[i - 2] == 0)
+            gate_ok  = (gate_vals is None) or (gate_vals[i - 1] == 1)
+            if is_fresh and gate_ok:
+                entry_p  = opens[i] * (1 + FRICTION_PCT)
+                shares   = cap / entry_p
+                in_trade = True
+                entry_ts = idx[i]
+                hold_bars = 0
+            elif not is_fresh and in_trade is False:
+                # already in signal zone — enter only if gate was never blocking
+                pass
 
         mtm = shares * price + (cap - shares * entry_p) if in_trade else cap
         equity.append(mtm)
@@ -183,8 +213,25 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         e21  = _ema(c, 21)
         e50  = _ema(c, 50)
         e200 = _ema(c, 200)
-        e200_slope = e200.pct_change(20) * 100  # 20日涨跌幅作为斜率
+        e200_slope = e200.pct_change(20) * 100
         signal = ((e21 > e50) & (e200_slope > 0)).shift(1).fillna(False).astype(int)
+
+    elif strat == "ema21_50_slope_rsi":
+        # EMA21>EMA50 + EMA200 20-day slope>0 as trend filter (hold condition)
+        # Entry gate: RSI14>58 AND EMA21 5-day slope>1.0% at crossover bar
+        # Gate only blocks entries at the crossover moment — does NOT trigger exits
+        e21  = _ema(c, 21)
+        e50  = _ema(c, 50)
+        e200 = _ema(c, 200)
+        e200_slope  = e200.pct_change(20) * 100
+        e21_slope5  = e21.pct_change(5) * 100
+        rsi14       = _rsi(c, 14)
+        signal      = ((e21 > e50) & (e200_slope > 0)).shift(1).fillna(False).astype(int)
+        entry_gate  = ((rsi14 > 58) & (e21_slope5 > 1.0)).shift(1).fillna(False).astype(int)
+        result = _simulate_signal(df, signal, stop=-0.20, entry_gate=entry_gate)
+        result["strategy_type"]  = strat
+        result["strategy_label"] = STRATEGY_LABELS[strat]
+        return result
 
     elif strat == "ema50_200":
         e50  = _ema(c, 50)
