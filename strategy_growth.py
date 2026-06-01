@@ -1,0 +1,199 @@
+"""
+strategy_growth.py — Per-asset optimal momentum/trend strategies for growth stocks.
+
+Each ticker uses the strategy with highest Calmar ratio from sensitivity analysis:
+  AAPL  → Price > EMA200          (Calmar 0.61, Return +3093%, MaxDD -34%)
+  NVDA  → 52-Week High >80%        (Calmar 0.94, Return +48446%, MaxDD -42%)
+  META  → EMA21 > EMA50            (Calmar 0.96, Return +2137%, MaxDD -26%)
+  AMZN  → EMA50 > EMA200           (Calmar 0.50, Return +2294%, MaxDD -38%)
+  GOOG  → 52-Week High >80%        (Calmar 0.54, Return +2323%, MaxDD -35%)
+  MSFT  → 52-Week High >80%        (Calmar 0.38, Return +1002%, MaxDD -36%)
+  TSLA  → Buy & Hold               (no strategy beats B&H, stay invested)
+  HOOD  → 52-Week High >75%        (Calmar 1.32, Return +503%, MaxDD -34%)
+  PLTR  → Price > EMA200           (Calmar 1.33, Return +2303%, MaxDD -57%)
+"""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+from typing import Dict
+
+from backtester import STARTING_CAP, FRICTION_PCT, LEVERAGE, _ema
+
+# ── 每个成长股对应的策略类型 ──────────────────────────────────
+GROWTH_STRATEGY: Dict[str, str] = {
+    "AAPL": "ema200",
+    "NVDA": "52wh80",
+    "META": "ema21_50",
+    "AMZN": "ema50_200",
+    "GOOG": "52wh80",
+    "MSFT": "52wh80",
+    "TSLA": "buyhold",
+    "HOOD": "52wh75",
+    "PLTR": "ema200",
+}
+
+STRATEGY_LABELS: Dict[str, str] = {
+    "ema200":    "价格 > EMA200",
+    "52wh80":    "近52周高点 >80%",
+    "ema21_50":  "EMA21 > EMA50",
+    "ema50_200": "EMA50 > EMA200",
+    "buyhold":   "买入持有",
+    "52wh75":    "近52周高点 >75%",
+}
+
+
+def _compute_metrics(eq: pd.Series, trades: list) -> Dict:
+    total_ret = (eq.iloc[-1] / STARTING_CAP - 1) * 100
+    dd_series = (eq - eq.cummax()) / eq.cummax() * 100
+    max_dd    = dd_series.min()
+    pct_ret   = eq.pct_change().dropna()
+    ann_ret   = ((eq.iloc[-1] / STARTING_CAP) ** (252 / max(len(eq), 1)) - 1) * 100
+    ann_vol   = pct_ret.std() * np.sqrt(252) * 100
+    sharpe    = ann_ret / ann_vol if ann_vol > 0 else 0.0
+    calmar    = ann_ret / abs(max_dd) if max_dd != 0 else 0.0
+    wins      = [t for t in trades if t["pnl"] > 0]
+    win_rate  = len(wins) / len(trades) * 100 if trades else 0.0
+    bh_ret    = (eq.index.map(lambda _: None))  # placeholder
+    return {
+        "total_return_pct": total_ret,
+        "ann_return_pct":   ann_ret,
+        "sharpe":           sharpe,
+        "max_drawdown_pct": max_dd,
+        "calmar":           calmar,
+        "win_rate_pct":     win_rate,
+        "n_trades":         len(trades),
+    }
+
+
+def _simulate_signal(df: pd.DataFrame, signal: pd.Series, stop: float = -0.20) -> Dict:
+    """Simulate long-only strategy from a binary signal series (1=hold, 0=flat).
+    Entry: next open after signal flips to 1.
+    Exit:  next open after signal flips to 0, or stop-loss intrabar.
+    """
+    cap       = float(STARTING_CAP)
+    in_trade  = False
+    entry_p   = 0.0
+    shares    = 0.0
+    equity    = []
+    trades    = []
+    entry_ts  = None
+    hold_bars = 0
+
+    sig_vals = signal.reindex(df.index).fillna(0).values
+    opens    = df["Open"].values
+    closes   = df["Close"].values
+    idx      = df.index
+
+    for i in range(len(df)):
+        price = closes[i]
+
+        if in_trade:
+            hold_bars += 1
+            ret = (price - entry_p) / entry_p
+            exit_reason = None
+            if ret <= stop:
+                exit_reason = f"StopLoss ({stop*100:.0f}%)"
+            elif i > 0 and sig_vals[i - 1] == 0:
+                # signal flipped to 0 yesterday → exit at today's open
+                exit_price  = opens[i]
+                pnl         = shares * (exit_price * (1 - FRICTION_PCT) - entry_p)
+                cap        += pnl
+                trades.append({
+                    "entry_time":  entry_ts,  "exit_time": idx[i],
+                    "entry_price": entry_p,   "exit_price": exit_price,
+                    "pnl": pnl, "hold_bars": hold_bars,
+                    "return_pct": (exit_price / entry_p - 1) * 100,
+                    "exit_reason": STRATEGY_LABELS.get(
+                        GROWTH_STRATEGY.get("", ""), "Signal Exit"),
+                })
+                in_trade = False; shares = 0.0; hold_bars = 0
+                equity.append(cap)
+                continue
+
+            if exit_reason:
+                pnl   = shares * (price * (1 - FRICTION_PCT) - entry_p)
+                cap  += pnl
+                trades.append({
+                    "entry_time":  entry_ts, "exit_time": idx[i],
+                    "entry_price": entry_p,  "exit_price": price,
+                    "pnl": pnl, "hold_bars": hold_bars,
+                    "return_pct": (price / entry_p - 1) * 100,
+                    "exit_reason": exit_reason,
+                })
+                in_trade = False; shares = 0.0; hold_bars = 0
+                equity.append(cap)
+                continue
+
+        # Entry: signal was 1 yesterday, not yet in trade
+        if not in_trade and i > 0 and sig_vals[i - 1] == 1:
+            entry_p  = opens[i] * (1 + FRICTION_PCT)
+            shares   = cap / entry_p
+            in_trade = True
+            entry_ts = idx[i]
+            hold_bars = 0
+
+        mtm = shares * price + (cap - shares * entry_p) if in_trade else cap
+        equity.append(mtm)
+
+    # Close open position at last close
+    if in_trade and shares > 0:
+        exit_price = closes[-1]
+        pnl = shares * (exit_price * (1 - FRICTION_PCT) - entry_p)
+        cap += pnl
+        trades.append({
+            "entry_time":  entry_ts, "exit_time": idx[-1],
+            "entry_price": entry_p,  "exit_price": exit_price,
+            "pnl": pnl, "hold_bars": hold_bars,
+            "return_pct": (exit_price / entry_p - 1) * 100,
+            "exit_reason": "持仓中",
+        })
+        equity[-1] = cap
+
+    eq = pd.Series(equity, index=df.index)
+    metrics = _compute_metrics(eq, trades)
+    return {"equity": eq, "trades": trades, "metrics": metrics}
+
+
+def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
+    """Run the per-asset optimal growth strategy. Returns same schema as other strategies."""
+    df   = df.copy()
+    c    = df["Close"]
+    strat = GROWTH_STRATEGY.get(ticker)
+
+    if strat is None:
+        raise ValueError(f"run_strategy_growth: {ticker} is not a growth ticker")
+
+    # ── Build signal ───────────────────────────────────────────
+    if strat == "ema200":
+        e200 = _ema(c, 200)
+        signal = (c > e200).shift(1).fillna(False).astype(int)
+
+    elif strat == "ema21_50":
+        e21 = _ema(c, 21)
+        e50 = _ema(c, 50)
+        signal = (e21 > e50).shift(1).fillna(False).astype(int)
+
+    elif strat == "ema50_200":
+        e50  = _ema(c, 50)
+        e200 = _ema(c, 200)
+        signal = (e50 > e200).shift(1).fillna(False).astype(int)
+
+    elif strat == "52wh80":
+        high52 = c.rolling(252, min_periods=50).max()
+        signal = (c > high52 * 0.80).shift(1).fillna(False).astype(int)
+
+    elif strat == "52wh75":
+        high52 = c.rolling(252, min_periods=50).max()
+        signal = (c > high52 * 0.75).shift(1).fillna(False).astype(int)
+
+    elif strat == "buyhold":
+        signal = pd.Series(1, index=df.index)
+
+    else:
+        raise ValueError(f"Unknown growth strategy: {strat}")
+
+    result = _simulate_signal(df, signal, stop=-0.20)
+    result["strategy_type"]  = strat
+    result["strategy_label"] = STRATEGY_LABELS[strat]
+    return result

@@ -1075,6 +1075,31 @@ def render_xgb_panel():
 # 单资产面板
 # ──────────────────────────────────────────────────────────────
 
+def _build_equity_from_trades(trades: list, df: pd.DataFrame) -> pd.Series:
+    """Reconstruct equity curve from trade list (growth strategy)."""
+    # strategy_growth stores equity in res; this is a fallback if missing
+    cap = float(STARTING_CAP)
+    equity = []
+    sorted_trades = sorted(trades, key=lambda t: t["entry_time"])
+    t_idx = 0
+    for i, ts in enumerate(df.index):
+        # advance past closed trades to update cap
+        while t_idx < len(sorted_trades) and sorted_trades[t_idx]["exit_time"] < ts:
+            cap += sorted_trades[t_idx]["pnl"]
+            t_idx += 1
+        # check if in an open trade
+        price = df["Close"].iloc[i]
+        in_t = (t_idx < len(sorted_trades) and
+                sorted_trades[t_idx]["entry_time"] <= ts <= sorted_trades[t_idx]["exit_time"])
+        if in_t:
+            ep = sorted_trades[t_idx]["entry_price"]
+            shares = cap / ep if ep > 0 else 0
+            equity.append(shares * price + (cap - shares * ep))
+        else:
+            equity.append(cap)
+    return pd.Series(equity, index=df.index)
+
+
 def render_asset(ticker: str) -> None:
     with st.spinner(f"拉取数据 & Walk-Forward 训练 HMM…"):
         try:
@@ -1085,42 +1110,82 @@ def render_asset(ticker: str) -> None:
 
     df       = res["df"]
     is_daily = res.get("is_daily", True)
+    is_growth = res.get("is_growth", False)
 
-    # 综合得分选最优策略：Calmar × log(n_trades+1) 权重，要求至少20笔且总收益为正
-    _all_strats = {
-        "A · HMM信号投票":   (res["metrics"],              res["trades"]),
-        "B · Trailing Stop": (res.get("metrics_b") or {}, res.get("trades_b") or []),
-        "C · EMA趋势跟踪":   (res.get("metrics_c") or {}, res.get("trades_c") or []),
-        "D · HMM+布林带":    (res.get("metrics_d") or {}, res.get("trades_d") or []),
-    }
-    def _score(m):
-        if not m or m.get("total_return_pct", 0) <= 0:
-            return -999
-        n = m.get("n_trades") or 0
-        if n < 20:
-            return -999
-        calmar = m.get("calmar", 0)
-        # log(n+1) 权重：20笔=3.04, 50笔=3.93, 100笔=4.62，差异不超过1.5倍，避免笔数主导
-        return calmar * np.log(n + 1)
-    best_name = max(_all_strats, key=lambda k: _score(_all_strats[k][0]))
-    metrics, trades = _all_strats[best_name]
-    if not metrics:
-        metrics, trades = res["metrics"], res["trades"]
-        best_name = "A · HMM信号投票"
-    _best_n = metrics.get("n_trades") or len(trades)
-    _best_composite = metrics.get("calmar", 0) * np.log(_best_n + 1) if _best_n >= 20 else 0
-    st.caption(f"📊 最优策略（综合得分 = Calmar × log(笔数+1)，≥20笔）：**策略{best_name}**  综合得分 {_best_composite:.2f}  Calmar {metrics.get('calmar',0):.2f}  交易 {_best_n} 笔")
+    if is_growth:
+        # ── 成长股：使用专属最优策略，不跑 HMM ──────────────────
+        metrics = res["metrics"]
+        trades  = res["trades"]
+        growth_label = res.get("growth_strategy_label", "动量趋势")
+        best_name = f"成长股专属 · {growth_label}"
+        _best_n = metrics.get("n_trades") or len(trades)
+        st.caption(f"📊 策略模式：**{best_name}**  Calmar {metrics.get('calmar',0):.2f}  Sharpe {metrics.get('sharpe',0):.2f}  交易 {_best_n} 笔  |  非 HMM 策略，基于价格动量/趋势信号")
+        _all_strats = {best_name: (metrics, trades)}
 
-    last     = df.iloc[-1]
-    n_states   = res.get("n_states",   N_STATES)
-    min_conf   = res.get("min_conf",   MIN_CONFIRMATIONS)
-    bull_top   = res.get("bull_top",   2)
-    stop       = res.get("stop",       -0.08)
-    adx_thresh = 20
+        # 成长股没有 HMM 字段，构造 fallback
+        last = df.iloc[-1]
+        # 计算技术指标（如果 df 还没有）
+        from backtester import compute_indicators, _ema
+        if "ema200" not in df.columns:
+            df = compute_indicators(df, ticker)
+            last = df.iloc[-1]
+        cur_regime        = "N/A (非HMM)"
+        cur_regime_filter = bool(last.get("Close", 0) > last.get("ema200", 0))
+        # 当前信号：依据 growth_strategy_type 实时判断
+        _gtype = res.get("growth_strategy_type", "ema200")
+        _c = last["Close"]
+        if _gtype == "ema200":
+            _sig_now = _c > last.get("ema200", 0)
+        elif _gtype == "ema21_50":
+            _sig_now = last.get("ema21", last.get("ema50", _c)) > last.get("ema50", 0) if "ema21" in last else _c > last.get("ema200", 0)
+        elif _gtype == "ema50_200":
+            _sig_now = last.get("ema50", _c) > last.get("ema200", 0)
+        elif _gtype in ("52wh80", "52wh75"):
+            _pct = 0.80 if _gtype == "52wh80" else 0.75
+            _h52 = df["Close"].rolling(252, min_periods=50).max().iloc[-1]
+            _sig_now = _c > _h52 * _pct
+        else:
+            _sig_now = True  # buyhold
+        cur_signal = "LONG" if _sig_now else "CASH"
+        n_states = 0; min_conf = 0; bull_top = 0; stop = -0.20; adx_thresh = 20
+        posterior = []
+    else:
+        # ── 原有 HMM 路径 ─────────────────────────────────────────
+        # 综合得分选最优策略：Calmar × log(n_trades+1) 权重，要求至少20笔且总收益为正
+        _all_strats = {
+            "A · HMM信号投票":   (res["metrics"],              res["trades"]),
+            "B · Trailing Stop": (res.get("metrics_b") or {}, res.get("trades_b") or []),
+            "C · EMA趋势跟踪":   (res.get("metrics_c") or {}, res.get("trades_c") or []),
+            "D · HMM+布林带":    (res.get("metrics_d") or {}, res.get("trades_d") or []),
+        }
+        def _score(m):
+            if not m or m.get("total_return_pct", 0) <= 0:
+                return -999
+            n = m.get("n_trades") or 0
+            if n < 20:
+                return -999
+            calmar = m.get("calmar", 0)
+            return calmar * np.log(n + 1)
+        best_name = max(_all_strats, key=lambda k: _score(_all_strats[k][0]))
+        metrics, trades = _all_strats[best_name]
+        if not metrics:
+            metrics, trades = res["metrics"], res["trades"]
+            best_name = "A · HMM信号投票"
+        _best_n = metrics.get("n_trades") or len(trades)
+        _best_composite = metrics.get("calmar", 0) * np.log(_best_n + 1) if _best_n >= 20 else 0
+        st.caption(f"📊 最优策略（综合得分 = Calmar × log(笔数+1)，≥20笔）：**策略{best_name}**  综合得分 {_best_composite:.2f}  Calmar {metrics.get('calmar',0):.2f}  交易 {_best_n} 笔")
 
-    cur_regime        = last["regime_label"]
-    cur_regime_filter = bool(last.get("regime_filter", False))
-    cur_signal = "LONG" if (last["is_bull"] and last["signal_score"] >= min_conf) else "CASH"
+        last     = df.iloc[-1]
+        n_states   = res.get("n_states",   N_STATES)
+        min_conf   = res.get("min_conf",   MIN_CONFIRMATIONS)
+        bull_top   = res.get("bull_top",   2)
+        stop       = res.get("stop",       -0.08)
+        adx_thresh = 20
+        posterior  = res.get("posterior", [])
+
+        cur_regime        = last["regime_label"]
+        cur_regime_filter = bool(last.get("regime_filter", False))
+        cur_signal = "LONG" if (last["is_bull"] and last["signal_score"] >= min_conf) else "CASH"
 
     # ── 顶部三栏 ─────────────────────────────────────────────
     b1, b2, b3 = st.columns([1.8, 1.8, 3.4], gap="medium")
@@ -1135,65 +1200,96 @@ def render_asset(ticker: str) -> None:
         </div>""", unsafe_allow_html=True)
 
     with b2:
-        pc = _pill(cur_regime)
         is_daily_txt = "日线" if is_daily else "1h"
-        posterior = res.get("posterior", [])
-        # determine action type
         if cur_signal == "LONG":
             action_type = "ENTRY"
             action_color = "#00e676"
         else:
             action_type = "CASH"
             action_color = "#64748b"
-        # risk status based on regime filter + regime
-        if "Bear" in cur_regime or "Crash" in cur_regime:
-            risk_status = "HIGH RISK"
-            risk_color  = "#ff5252"
-        elif not cur_regime_filter:
-            risk_status = "CAUTION"
-            risk_color  = "#ffd740"
+
+        if is_growth:
+            # 成长股：显示策略信号卡片
+            _trend_ok = cur_regime_filter  # 价格 > EMA200
+            risk_status = "NORMAL" if _trend_ok else "CAUTION"
+            risk_color  = "#00e676" if _trend_ok else "#ffd740"
+            _gtype_disp = res.get("growth_strategy_label", "动量趋势")
+            _e200_v = last.get("ema200", 0)
+            _e50_v  = last.get("ema50", 0)
+            _e21_v  = last.get("ema21", last.get("ema50", 0))
+            st.markdown(f"""<div class="signal-cash">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                        <div class="signal-title">策略信号（{_gtype_disp}）</div>
+                        <div style="margin-top:8px;font-size:0.78rem;color:#94a3b8">
+                            EMA200: <b style="color:#60a5fa">${_e200_v:,.1f}</b>&nbsp;&nbsp;
+                            EMA50: <b style="color:#a78bfa">${_e50_v:,.1f}</b>
+                        </div>
+                    </div>
+                    <div style="text-align:right">
+                        <div style="font-size:0.6rem;color:#475569;text-transform:uppercase;letter-spacing:1px">Action</div>
+                        <div style="font-size:1.1rem;font-weight:800;color:{action_color}">{action_type}</div>
+                        <div style="font-size:0.62rem;color:{risk_color};margin-top:2px;font-weight:600">{risk_status}</div>
+                    </div>
+                </div>
+                <div style="margin-top:8px;font-size:0.72rem;color:#475569">
+                    止损 -20% · 日线 · {len(df):,} bars · 非HMM策略
+                </div>
+                <div style="margin-top:4px;font-size:0.72rem">
+                    趋势状态：<span style="color:{'#00e676' if _trend_ok else '#ffd740'};font-weight:600">
+                    {'✅ 价格站上 EMA200' if _trend_ok else '⚠️ 价格跌破 EMA200'}
+                    </span>
+                </div>
+            </div>""", unsafe_allow_html=True)
         else:
-            risk_status = "NORMAL"
-            risk_color  = "#00e676"
-        # posterior bar for current regime
-        n_post = len(posterior)
-        top_post_idx = int(np.argmax(posterior)) if posterior else 0
-        top_post_val = float(posterior[top_post_idx]) * 100 if posterior else 0.0
-        post_html = ""
-        if posterior:
-            post_html = '<div style="margin-top:6px;font-size:0.68rem;color:#475569">HMM 后验置信度（最新bar）</div>'
-            post_html += '<div style="display:flex;gap:3px;margin-top:3px;flex-wrap:wrap">'
-            for i, p in enumerate(posterior):
-                bar_pct = int(p * 100)
-                is_top  = (i == top_post_idx)
-                bar_col = "#00e676" if is_top else "rgba(96,165,250,0.4)"
-                post_html += (f'<div title="State {i}: {p*100:.1f}%" style="flex:1;min-width:16px">'
-                              f'<div style="background:{bar_col};height:{max(4,bar_pct//4)}px;border-radius:2px;opacity:0.85"></div>'
-                              f'<div style="font-size:0.55rem;color:#475569;text-align:center">{i}</div></div>')
-            post_html += '</div>'
-            post_html += f'<div style="font-size:0.68rem;color:#60a5fa;margin-top:2px">最高后验 State {top_post_idx}: {top_post_val:.1f}%</div>'
-        st.markdown(f"""<div class="signal-cash">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                <div>
-                    <div class="signal-title">HMM 状态（Walk-Forward）</div>
-                    <div style="margin-top:8px"><span class="regime-pill {pc}">{cur_regime}</span></div>
+            # HMM 路径
+            pc = _pill(cur_regime)
+            if "Bear" in cur_regime or "Crash" in cur_regime:
+                risk_status = "HIGH RISK"
+                risk_color  = "#ff5252"
+            elif not cur_regime_filter:
+                risk_status = "CAUTION"
+                risk_color  = "#ffd740"
+            else:
+                risk_status = "NORMAL"
+                risk_color  = "#00e676"
+            top_post_idx = int(np.argmax(posterior)) if posterior else 0
+            top_post_val = float(posterior[top_post_idx]) * 100 if posterior else 0.0
+            post_html = ""
+            if posterior:
+                post_html = '<div style="margin-top:6px;font-size:0.68rem;color:#475569">HMM 后验置信度（最新bar）</div>'
+                post_html += '<div style="display:flex;gap:3px;margin-top:3px;flex-wrap:wrap">'
+                for i, p in enumerate(posterior):
+                    bar_pct = int(p * 100)
+                    is_top  = (i == top_post_idx)
+                    bar_col = "#00e676" if is_top else "rgba(96,165,250,0.4)"
+                    post_html += (f'<div title="State {i}: {p*100:.1f}%" style="flex:1;min-width:16px">'
+                                  f'<div style="background:{bar_col};height:{max(4,bar_pct//4)}px;border-radius:2px;opacity:0.85"></div>'
+                                  f'<div style="font-size:0.55rem;color:#475569;text-align:center">{i}</div></div>')
+                post_html += '</div>'
+                post_html += f'<div style="font-size:0.68rem;color:#60a5fa;margin-top:2px">最高后验 State {top_post_idx}: {top_post_val:.1f}%</div>'
+            st.markdown(f"""<div class="signal-cash">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                        <div class="signal-title">HMM 状态（Walk-Forward）</div>
+                        <div style="margin-top:8px"><span class="regime-pill {pc}">{cur_regime}</span></div>
+                    </div>
+                    <div style="text-align:right">
+                        <div style="font-size:0.6rem;color:#475569;text-transform:uppercase;letter-spacing:1px">Action</div>
+                        <div style="font-size:1.1rem;font-weight:800;color:{action_color}">{action_type}</div>
+                        <div style="font-size:0.62rem;color:{risk_color};margin-top:2px;font-weight:600">{risk_status}</div>
+                    </div>
                 </div>
-                <div style="text-align:right">
-                    <div style="font-size:0.6rem;color:#475569;text-transform:uppercase;letter-spacing:1px">Action</div>
-                    <div style="font-size:1.1rem;font-weight:800;color:{action_color}">{action_type}</div>
-                    <div style="font-size:0.62rem;color:{risk_color};margin-top:2px;font-weight:600">{risk_status}</div>
+                <div style="margin-top:8px;font-size:0.72rem;color:#475569">
+                    {n_states}状态 · {bull_top}入场 · 阈值{min_conf} · 止损{stop*100:.0f}% · {is_daily_txt} · {len(df):,} bars
                 </div>
-            </div>
-            <div style="margin-top:8px;font-size:0.72rem;color:#475569">
-                {n_states}状态 · {bull_top}入场 · 阈值{min_conf} · 止损{stop*100:.0f}% · {is_daily_txt} · {len(df):,} bars
-            </div>
-            <div style="margin-top:4px;font-size:0.72rem">
-                Regime Filter（诊断层）：<span style="color:{'#00e676' if cur_regime_filter else '#ffd740'};font-weight:600">
-                {'✅ 趋势确认' if cur_regime_filter else '⚠️ 趋势待确认'}
-                </span>
-            </div>
-            {post_html}
-        </div>""", unsafe_allow_html=True)
+                <div style="margin-top:4px;font-size:0.72rem">
+                    Regime Filter（诊断层）：<span style="color:{'#00e676' if cur_regime_filter else '#ffd740'};font-weight:600">
+                    {'✅ 趋势确认' if cur_regime_filter else '⚠️ 趋势待确认'}
+                    </span>
+                </div>
+                {post_html}
+            </div>""", unsafe_allow_html=True)
 
     with b3:
         c1  = bool(last["rsi"]           < 90)
@@ -1323,15 +1419,28 @@ def render_asset(ticker: str) -> None:
         _s, _e = str(_start), str(_end)
         _df_slice = df.loc[_s:_e].copy()
 
+    # 写入 equity 列（成长股从 res["equity_growth"] 或重建；HMM 已经在 df 里）
+    if is_growth:
+        _eq_series = res.get("equity_growth")
+        if _eq_series is None:
+            _eq_series = _build_equity_from_trades(trades, df)
+        df["equity"] = _eq_series.reindex(df.index).fillna(method="ffill").fillna(STARTING_CAP)
+        _df_slice["equity"] = df["equity"].reindex(_df_slice.index)
+
     # 用切片区间重算指标
-    from backtester import _compute_metrics as _cm
-    _trades_slice = [t for t in trades
-                     if t["entry_time"] >= _df_slice.index[0]
-                     and t["exit_time"]  <= _df_slice.index[-1]]
-    try:
-        metrics = _cm(_df_slice, _trades_slice, ticker, is_daily)
-    except Exception:
-        pass  # 切片太短时保留全区间指标
+    if not is_growth:
+        from backtester import _compute_metrics as _cm
+        _trades_slice = [t for t in trades
+                         if t["entry_time"] >= _df_slice.index[0]
+                         and t["exit_time"]  <= _df_slice.index[-1]]
+        try:
+            metrics = _cm(_df_slice, _trades_slice, ticker, is_daily)
+        except Exception:
+            pass  # 切片太短时保留全区间指标
+    else:
+        _trades_slice = [t for t in trades
+                         if t["entry_time"] >= _df_slice.index[0]
+                         and t["exit_time"]  <= _df_slice.index[-1]]
 
     # ── K线 + Volume + RSI ──────────────────────────────────
     st.markdown('<div class="section-header">📊 K线图 · Volume · RSI&nbsp;&nbsp;<span style="font-size:0.75rem;color:#475569;font-weight:400">绿=Bull Run · 浅绿=Bull+ · 蓝=Warming Up · 红=Bear</span></div>', unsafe_allow_html=True)
@@ -1369,14 +1478,17 @@ def render_asset(ticker: str) -> None:
 
     cols = st.columns(4, gap="small")
     rc = "green" if metrics["total_return_pct"] > 0 else "red"
-    ac = "green" if metrics["alpha_pct"] > 0 else "red"
+    _bh_ret  = metrics.get("bh_return_pct") or (df["Close"].iloc[-1]/df["Close"].iloc[0]-1)*100
+    _alpha   = metrics.get("alpha_pct") or (metrics["total_return_pct"] - _bh_ret)
+    ac = "green" if _alpha > 0 else "red"
+    _final_cap = metrics.get("final_capital") or (STARTING_CAP * (1 + metrics["total_return_pct"]/100))
     with cols[0]: st.markdown(_metric("总收益",      f"{metrics['total_return_pct']:+.1f}%",
                                                       f"年化 {_fmt_ann(metrics['ann_return_pct'])}", rc), unsafe_allow_html=True)
-    with cols[1]: st.markdown(_metric("vs B&H Alpha", f"{metrics['alpha_pct']:+.1f}%",
-                                                      f"B&H {metrics['bh_return_pct']:+.1f}%", ac), unsafe_allow_html=True)
+    with cols[1]: st.markdown(_metric("vs B&H Alpha", f"{_alpha:+.1f}%",
+                                                      f"B&H {_bh_ret:+.1f}%", ac), unsafe_allow_html=True)
     with cols[2]: st.markdown(_metric("最大回撤",    f"{metrics['max_drawdown_pct']:.1f}%",
                                                       "峰值→谷值", "red"), unsafe_allow_html=True)
-    with cols[3]: st.markdown(_metric("最终资本",    f"${metrics['final_capital']:,.0f}",
+    with cols[3]: st.markdown(_metric("最终资本",    f"${_final_cap:,.0f}",
                                                       f"起始 ${STARTING_CAP:,.0f} · {LEVERAGE}×", "yellow"), unsafe_allow_html=True)
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
@@ -1384,45 +1496,60 @@ def render_asset(ticker: str) -> None:
     _sh = metrics["sharpe"]; _ca = metrics["calmar"]
     sh_c = "green" if _sh > 1 else "yellow" if _sh > 0 else "red"
     ca_c = "green" if _ca > 1 else "yellow" if _ca > 0 else "red"
-    sa_v = f"{metrics['spy_alpha_pct']:+.1f}%" if metrics["spy_alpha_pct"] is not None else "N/A"
-    sa_s = f"SPY {metrics['spy_bh_pct']:+.1f}%" if metrics["spy_bh_pct"] is not None else ""
-    sa_c = "green" if (metrics["spy_alpha_pct"] or 0) > 0 else "red"
+    _ann_vol = metrics.get("ann_vol_pct") or 0
+    _mwin    = metrics.get("monthly_win_pct") or 0
+    _wrate   = metrics.get("win_rate_pct") or 0
+    _spy_a   = metrics.get("spy_alpha_pct")
+    _spy_bh  = metrics.get("spy_bh_pct")
+    sa_v = f"{_spy_a:+.1f}%" if _spy_a is not None else "N/A"
+    sa_s = f"SPY {_spy_bh:+.1f}%" if _spy_bh is not None else ""
+    sa_c = "green" if (_spy_a or 0) > 0 else "red"
     with cols2[0]: st.markdown(_metric("夏普比率",   _fmt_ratio(_sh),
-                                                      f"年化波动 {metrics['ann_vol_pct']:.1f}%", sh_c), unsafe_allow_html=True)
+                                                      f"年化波动 {_ann_vol:.1f}%", sh_c), unsafe_allow_html=True)
     with cols2[1]: st.markdown(_metric("卡玛比率",   _fmt_ratio(_ca),
                                                       "年化收益 / 最大回撤", ca_c), unsafe_allow_html=True)
-    with cols2[2]: st.markdown(_metric("月度胜率",   f"{metrics['monthly_win_pct']:.1f}%",
-                                                      f"交易胜率 {metrics['win_rate_pct']:.1f}%", "blue"), unsafe_allow_html=True)
+    with cols2[2]: st.markdown(_metric("月度胜率",   f"{_mwin:.1f}%" if _mwin else "—",
+                                                      f"交易胜率 {_wrate:.1f}%", "blue"), unsafe_allow_html=True)
     with cols2[3]: st.markdown(_metric("vs SPY Alpha", sa_v, sa_s, sa_c), unsafe_allow_html=True)
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
-    # ── 绩效指标 Row 3：新增高级指标 ─────────────────────────
+    # ── 绩效指标 Row 3：高级指标（HMM 专属字段用 .get 安全取值）─
     cols3 = st.columns(4, gap="small")
-    _so = metrics["sortino"]
+    _so  = metrics.get("sortino") or 0
+    _pf  = metrics.get("profit_factor") or 0
+    _ex  = metrics.get("expectancy") or 0
+    _rr  = metrics.get("rr_ratio") or 0
+    _tr  = metrics.get("tail_ratio") or 0
     so_c  = "green" if _so > 1 else "yellow" if _so > 0 else "red"
-    pf_c  = "green" if metrics["profit_factor"] > 1.5 else "yellow" if metrics["profit_factor"] > 1 else "red"
-    ex_c  = "green" if metrics["expectancy"] > 0 else "red"
-    tr_c  = "green" if metrics["tail_ratio"] > 1 else "yellow"
+    pf_c  = "green" if _pf > 1.5 else "yellow" if _pf > 1 else "red"
+    ex_c  = "green" if _ex > 0 else "red"
+    tr_c  = "green" if _tr > 1 else "yellow"
     with cols3[0]: st.markdown(_metric("Sortino 比率",  _fmt_ratio(_so),
                                                          f"下行波动率标准化", so_c), unsafe_allow_html=True)
-    with cols3[1]: st.markdown(_metric("Profit Factor", f"{metrics['profit_factor']:.2f}",
+    with cols3[1]: st.markdown(_metric("Profit Factor", f"{_pf:.2f}" if _pf else "—",
                                                          f"总盈利 / 总亏损", pf_c), unsafe_allow_html=True)
-    with cols3[2]: st.markdown(_metric("期望值/笔",     f"${metrics['expectancy']:+.0f}",
-                                                         f"盈亏比 {metrics['rr_ratio']:.2f}×", ex_c), unsafe_allow_html=True)
-    with cols3[3]: st.markdown(_metric("Tail Ratio",    f"{metrics['tail_ratio']:.2f}",
+    with cols3[2]: st.markdown(_metric("期望值/笔",     f"${_ex:+.0f}" if _ex else "—",
+                                                         f"盈亏比 {_rr:.2f}×" if _rr else "", ex_c), unsafe_allow_html=True)
+    with cols3[3]: st.markdown(_metric("Tail Ratio",    f"{_tr:.2f}" if _tr else "—",
                                                          "P95收益 / P5亏损", tr_c), unsafe_allow_html=True)
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
     cols4 = st.columns(4, gap="small")
-    cl_c  = "green" if metrics["max_consec_loss"] <= 2 else "yellow" if metrics["max_consec_loss"] <= 4 else "red"
-    sk_c  = "green" if metrics["skewness"] > 0 else "yellow"
-    rc_label = f"{metrics['max_recovery_bars']}{'日' if is_daily else 'h'}"
-    with cols4[0]: st.markdown(_metric("最大连续亏损",  f"{metrics['max_consec_loss']} 笔",
+    _mcl  = metrics.get("max_consec_loss") or 0
+    _ahb  = metrics.get("avg_hold_bars") or 0
+    _aps  = metrics.get("avg_pos_size_pct") or 0
+    _sk   = metrics.get("skewness") or 0
+    _ku   = metrics.get("kurtosis") or 0
+    _mrb  = metrics.get("max_recovery_bars") or 0
+    cl_c  = "green" if _mcl <= 2 else "yellow" if _mcl <= 4 else "red"
+    sk_c  = "green" if _sk > 0 else "yellow"
+    rc_label = f"{_mrb}{'日' if is_daily else 'h'}"
+    with cols4[0]: st.markdown(_metric("最大连续亏损",  f"{_mcl} 笔" if _mcl else "—",
                                                          "连续止损次数上限", cl_c), unsafe_allow_html=True)
-    with cols4[1]: st.markdown(_metric("平均持仓",      f"{metrics['avg_hold_bars']:.0f} bars",
-                                                         f"平均仓位 {metrics['avg_pos_size_pct']:.0f}%", "blue"), unsafe_allow_html=True)
-    with cols4[2]: st.markdown(_metric("收益偏度",      f"{metrics['skewness']:+.2f}",
-                                                         f"峰度 {metrics['kurtosis']:.2f}", sk_c), unsafe_allow_html=True)
+    with cols4[1]: st.markdown(_metric("平均持仓",      f"{_ahb:.0f} bars" if _ahb else "—",
+                                                         f"平均仓位 {_aps:.0f}%" if _aps else "", "blue"), unsafe_allow_html=True)
+    with cols4[2]: st.markdown(_metric("收益偏度",      f"{_sk:+.2f}" if _sk else "—",
+                                                         f"峰度 {_ku:.2f}" if _ku else "", sk_c), unsafe_allow_html=True)
     with cols4[3]: st.markdown(_metric("最长回撤修复",  rc_label,
                                                          "峰值→修复所需时间", "yellow"), unsafe_allow_html=True)
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
@@ -1458,13 +1585,16 @@ def render_asset(ticker: str) -> None:
     st.markdown('<div class="section-header">💰 资金曲线 vs 买入持有 vs SPY</div>', unsafe_allow_html=True)
     _res_eq = dict(res)
     _s, _e = str(_df_slice.index[0].date()), str(_df_slice.index[-1].date())
-    for _k in ["equity_b", "equity_c", "equity_d"]:
-        _v = res.get(_k)
-        if _v is not None and isinstance(_v, pd.Series):
-            _res_eq[_k] = _v.loc[_s:_e]
-    _key_map = {"A · HMM信号投票": "equity", "B · Trailing Stop": "equity_b",
-                "C · EMA趋势跟踪": "equity_c", "D · HMM+布林带": "equity_d"}
-    _best_eq_key = _key_map.get(best_name, "equity")
+    if not is_growth:
+        for _k in ["equity_b", "equity_c", "equity_d"]:
+            _v = res.get(_k)
+            if _v is not None and isinstance(_v, pd.Series):
+                _res_eq[_k] = _v.loc[_s:_e]
+        _key_map = {"A · HMM信号投票": "equity", "B · Trailing Stop": "equity_b",
+                    "C · EMA趋势跟踪": "equity_c", "D · HMM+布林带": "equity_d"}
+        _best_eq_key = _key_map.get(best_name, "equity")
+    else:
+        _best_eq_key = "equity"
     st.plotly_chart(equity_chart(_df_slice, _res_eq, best_key=_best_eq_key), use_container_width=True)
 
     # ── 滚动夏普 ─────────────────────────────────────────────
@@ -1479,30 +1609,46 @@ def render_asset(ticker: str) -> None:
     st.markdown('<div class="section-header">🌊 Underwater 回撤曲线</div>', unsafe_allow_html=True)
     st.plotly_chart(underwater_chart(_df_slice), use_container_width=True)
 
-    # ── 月度热力图（含 BH / Alpha 标签） + 状态分布 ──────────
-    col_heat, col_dist = st.columns([3, 2], gap="medium")
-    with col_heat:
-        st.markdown('<div class="section-header">🗓 月度收益热力图（Strategy / B&H / Alpha）</div>', unsafe_allow_html=True)
-        monthly_heatmap_tabbed(metrics["monthly_df"])
-    with col_dist:
-        st.markdown('<div class="section-header">🧩 HMM 状态分布</div>', unsafe_allow_html=True)
-        st.plotly_chart(regime_bar(_df_slice), use_container_width=True)
+    # ── 月度热力图 + 状态分布（成长股无 HMM 状态分布）─────────
+    if not is_growth:
+        col_heat, col_dist = st.columns([3, 2], gap="medium")
+        with col_heat:
+            st.markdown('<div class="section-header">🗓 月度收益热力图（Strategy / B&H / Alpha）</div>', unsafe_allow_html=True)
+            monthly_heatmap_tabbed(metrics["monthly_df"])
+        with col_dist:
+            st.markdown('<div class="section-header">🧩 HMM 状态分布</div>', unsafe_allow_html=True)
+            st.plotly_chart(regime_bar(_df_slice), use_container_width=True)
+    else:
+        st.markdown('<div class="section-header">🗓 月度收益热力图</div>', unsafe_allow_html=True)
+        # Build monthly_df for growth strategy
+        _eq_m = df["equity"].resample("ME").last()
+        _monthly_ret = _eq_m.pct_change().dropna() * 100
+        _mdf = pd.DataFrame({"strategy": _monthly_ret})
+        _mdf["bh"] = (df["Close"].resample("ME").last().pct_change().dropna() * 100).reindex(_mdf.index)
+        _mdf["alpha"] = _mdf["strategy"] - _mdf["bh"]
+        _mdf["year"] = _mdf.index.year; _mdf["month"] = _mdf.index.month
+        try:
+            monthly_heatmap_tabbed(_mdf)
+        except Exception:
+            st.caption("月度热力图数据不足")
 
-    # ── 宏观特征可视化 ────────────────────────────────────────
-    from data_loader import MACRO_TABLES
-    _macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
-    if _macro_cols:
-        st.markdown('<div class="section-header">🌐 宏观指标时序（z-score · 背景色=Regime）</div>', unsafe_allow_html=True)
-        st.plotly_chart(macro_timeseries_chart(df), use_container_width=True)
-        st.markdown('<div class="section-header">📊 各 Regime 宏观特征均值对比</div>', unsafe_allow_html=True)
-        st.plotly_chart(macro_by_regime_chart(df), use_container_width=True)
+    # ── 宏观特征可视化（仅 HMM 资产）────────────────────────────
+    if not is_growth:
+        from data_loader import MACRO_TABLES
+        _macro_cols = [c for c in MACRO_TABLES.values() if c in df.columns]
+        if _macro_cols:
+            st.markdown('<div class="section-header">🌐 宏观指标时序（z-score · 背景色=Regime）</div>', unsafe_allow_html=True)
+            st.plotly_chart(macro_timeseries_chart(df), use_container_width=True)
+            st.markdown('<div class="section-header">📊 各 Regime 宏观特征均值对比</div>', unsafe_allow_html=True)
+            st.plotly_chart(macro_by_regime_chart(df), use_container_width=True)
 
-    # ── 各状态收益箱线图 ─────────────────────────────────────
-    st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
-    st.plotly_chart(regime_return_chart(_df_slice, n_states), use_container_width=True)
+    # ── 各状态收益箱线图（仅 HMM）────────────────────────────────
+    if not is_growth:
+        st.markdown('<div class="section-header">📦 各 HMM 状态收益率分布</div>', unsafe_allow_html=True)
+        st.plotly_chart(regime_return_chart(_df_slice, n_states), use_container_width=True)
 
-    # ── Regime Return Attribution ─────────────────────────────
-    if _trades_slice:
+    # ── Regime Return Attribution（仅 HMM）───────────────────────
+    if not is_growth and _trades_slice:
         st.markdown('<div class="section-header">🔍 Regime 交易归因（各状态入场盈亏 & 胜率）</div>', unsafe_allow_html=True)
         st.plotly_chart(regime_attribution_chart(_df_slice, _trades_slice), use_container_width=True)
 
@@ -1544,12 +1690,12 @@ def render_asset(ticker: str) -> None:
         worst_t = tdf_s["pnl"].min() if len(tdf_s) else 0
         stats = [
             ("总笔数",       f"{metrics['n_trades']}"),
-            ("盈亏比 (R:R)", f"{metrics['rr_ratio']:.2f}"),
-            ("平均盈利",     f"${metrics['avg_win']:+,.0f}"),
-            ("平均亏损",     f"${metrics['avg_loss']:+,.0f}"),
+            ("盈亏比 (R:R)", f"{metrics.get('rr_ratio', 0):.2f}"),
+            ("平均盈利",     f"${metrics.get('avg_win', 0):+,.0f}"),
+            ("平均亏损",     f"${metrics.get('avg_loss', 0):+,.0f}"),
             ("最优单笔",     f"${best_t:+,.0f}"),
             ("最差单笔",     f"${worst_t:+,.0f}"),
-            ("平均仓位",     f"{metrics['avg_pos_size_pct']:.0f}%"),
+            ("平均仓位",     f"{metrics.get('avg_pos_size_pct', 0):.0f}%"),
         ]
         st.markdown("".join(
             f'<div class="sig-row"><span class="sig-name">{k}</span>'

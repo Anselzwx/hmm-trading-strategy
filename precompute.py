@@ -5,11 +5,12 @@ from datetime import datetime
 
 warnings.filterwarnings("ignore")
 
-from data_loader import fetch_data
-from backtester  import run_backtest
-from backtester_v2 import run_backtest_v2
-from strategy_c  import run_strategy_c
-from strategy_d  import run_strategy_d
+from data_loader    import fetch_data
+from backtester     import run_backtest
+from backtester_v2  import run_backtest_v2
+from strategy_c     import run_strategy_c
+from strategy_d     import run_strategy_d
+from strategy_growth import run_strategy_growth, GROWTH_STRATEGY, STRATEGY_LABELS
 
 TICKERS = ["AAPL", "GC=F", "SI=F", "CL=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR"]
 OUT_DIR = os.path.join(os.path.dirname(__file__), "results")
@@ -31,10 +32,34 @@ def main():
         df = fetch_data(ticker, force_refresh=True)
         print(f"        数据量：{len(df)} bars  ({str(df.index[0])[:10]} → {str(df.index[-1])[:10]})")
 
-        print(f"  [2/4] 策略A（HMM信号投票）...")
-        result = run_backtest(df, ticker)
-        m = result["metrics"]
-        print(f"        总收益：{m['total_return_pct']:+.1f}%  夏普：{m['sharpe']:.2f}  MaxDD：{m['max_drawdown_pct']:.1f}%  交易：{m['n_trades']}笔")
+        is_growth = ticker in GROWTH_STRATEGY
+
+        if is_growth:
+            strat_label = STRATEGY_LABELS[GROWTH_STRATEGY[ticker]]
+            print(f"  [2/4] 策略A（成长股最优：{strat_label}）...")
+            res_g = run_strategy_growth(df, ticker)
+            # 成长股：把 growth 结果挂在主 result 上，并填充 a/b/c/d 槽位
+            result = {
+                "df":                    df,
+                "trades":                res_g["trades"],
+                "metrics":               res_g["metrics"],
+                "equity_growth":         res_g["equity"],
+                "is_growth":             True,
+                "growth_strategy_type":  res_g["strategy_type"],
+                "growth_strategy_label": res_g["strategy_label"],
+                # HMM 字段置空
+                "bull_states": [], "bear_state": None,
+                "regime_labels": {}, "model": None,
+                "is_daily": True, "n_states": 0,
+                "bull_top": 0, "min_conf": 0, "stop": 0, "posterior": [],
+            }
+            mg = res_g["metrics"]
+            print(f"        总收益：{mg['total_return_pct']:+.1f}%  夏普：{mg['sharpe']:.2f}  MaxDD：{mg['max_drawdown_pct']:.1f}%  交易：{mg['n_trades']}笔")
+        else:
+            print(f"  [2/4] 策略A（HMM信号投票）...")
+            result = run_backtest(df, ticker)
+            m = result["metrics"]
+            print(f"        总收益：{m['total_return_pct']:+.1f}%  夏普：{m['sharpe']:.2f}  MaxDD：{m['max_drawdown_pct']:.1f}%  交易：{m['n_trades']}笔")
 
         print(f"  [3/4] 策略B（Trailing Stop）...")
         try:
