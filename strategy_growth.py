@@ -4,7 +4,7 @@ strategy_growth.py — Per-asset optimal momentum/trend strategies for growth st
 Each ticker uses the strategy with highest Calmar ratio from sensitivity analysis:
   AAPL  → Price > EMA200          (Calmar 0.61, Return +3093%, MaxDD -34%)
   NVDA  → 52-Week High >80%        (Calmar 0.94, Return +48446%, MaxDD -42%)
-  META  → EMA21 > EMA50            (Calmar 0.96, Return +2137%, MaxDD -26%)
+  META  → EMA21>EMA50 + EMA200斜率>0 (Calmar 0.79, Return +1266%, MaxDD -26%, 近3年+69%)
   AMZN  → EMA50 > EMA200           (Calmar 0.50, Return +2294%, MaxDD -38%)
   GOOG  → 52-Week High >80%        (Calmar 0.54, Return +2323%, MaxDD -35%)
   MSFT  → 52-Week High >80%        (Calmar 0.38, Return +1002%, MaxDD -36%)
@@ -24,7 +24,7 @@ from backtester import STARTING_CAP, FRICTION_PCT, LEVERAGE, _ema, compute_indic
 GROWTH_STRATEGY: Dict[str, str] = {
     "AAPL": "ema200",
     "NVDA": "52wh80",
-    "META": "ema21_50",
+    "META": "ema21_50_slope",
     "AMZN": "ema50_200",
     "GOOG": "52wh80",
     "MSFT": "52wh80",
@@ -34,12 +34,13 @@ GROWTH_STRATEGY: Dict[str, str] = {
 }
 
 STRATEGY_LABELS: Dict[str, str] = {
-    "ema200":    "价格 > EMA200",
-    "52wh80":    "近52周高点 >80%",
-    "ema21_50":  "EMA21 > EMA50",
-    "ema50_200": "EMA50 > EMA200",
-    "buyhold":   "买入持有",
-    "52wh75":    "近52周高点 >75%",
+    "ema200":         "价格 > EMA200",
+    "52wh80":         "近52周高点 >80%",
+    "ema21_50":       "EMA21 > EMA50",
+    "ema21_50_slope": "EMA21>EMA50 + EMA200趋势向上",
+    "ema50_200":      "EMA50 > EMA200",
+    "buyhold":        "买入持有",
+    "52wh75":         "近52周高点 >75%",
 }
 
 
@@ -176,6 +177,14 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         e21 = _ema(c, 21)
         e50 = _ema(c, 50)
         signal = (e21 > e50).shift(1).fillna(False).astype(int)
+
+    elif strat == "ema21_50_slope":
+        # EMA21>EMA50 且 EMA200 20日斜率>0（长期趋势未转头，过滤震荡假信号）
+        e21  = _ema(c, 21)
+        e50  = _ema(c, 50)
+        e200 = _ema(c, 200)
+        e200_slope = e200.pct_change(20) * 100  # 20日涨跌幅作为斜率
+        signal = ((e21 > e50) & (e200_slope > 0)).shift(1).fillna(False).astype(int)
 
     elif strat == "ema50_200":
         e50  = _ema(c, 50)
