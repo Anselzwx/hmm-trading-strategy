@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict
 
-from backtester import STARTING_CAP, FRICTION_PCT, LEVERAGE, _ema
+from backtester import STARTING_CAP, FRICTION_PCT, LEVERAGE, _ema, compute_indicators
 
 # ── 每个成长股对应的策略类型 ──────────────────────────────────
 GROWTH_STRATEGY: Dict[str, str] = {
@@ -158,6 +158,9 @@ def _simulate_signal(df: pd.DataFrame, signal: pd.Series, stop: float = -0.20) -
 def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
     """Run the per-asset optimal growth strategy. Returns same schema as other strategies."""
     df   = df.copy()
+    # Compute all technical indicators so df is complete for app.py charts
+    if "ema200" not in df.columns:
+        df = compute_indicators(df, ticker)
     c    = df["Close"]
     strat = GROWTH_STRATEGY.get(ticker)
 

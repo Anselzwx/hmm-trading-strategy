@@ -39,8 +39,14 @@ def main():
             print(f"  [2/4] 策略A（成长股最优：{strat_label}）...")
             res_g = run_strategy_growth(df, ticker)
             # 成长股：把 growth 结果挂在主 result 上，并填充 a/b/c/d 槽位
+            # compute_indicators already called inside run_strategy_growth
+            from backtester import compute_indicators as _ci
+            _full_df = _ci(df.copy(), ticker)
+            _full_df["regime_label"] = "N/A"
+            _full_df["is_bull"]      = False
+            _full_df["signal_score"] = 0
             result = {
-                "df":                    df,
+                "df":                    _full_df,
                 "trades":                res_g["trades"],
                 "metrics":               res_g["metrics"],
                 "equity_growth":         res_g["equity"],

@@ -1149,6 +1149,13 @@ def render_asset(ticker: str) -> None:
         cur_signal = "LONG" if _sig_now else "CASH"
         n_states = 0; min_conf = 0; bull_top = 0; stop = -0.20; adx_thresh = 20
         posterior = []
+        # 补充 candle_chart / macd_signal_chart 需要的 HMM 伪列
+        if "regime_label" not in df.columns:
+            df["regime_label"]  = "N/A"
+        if "is_bull" not in df.columns:
+            df["is_bull"]       = _sig_now
+        if "signal_score" not in df.columns:
+            df["signal_score"]  = 0
     else:
         # ── 原有 HMM 路径 ─────────────────────────────────────────
         # 综合得分选最优策略：Calmar × log(n_trades+1) 权重，要求至少20笔且总收益为正
