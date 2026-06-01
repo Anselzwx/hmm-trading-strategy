@@ -90,6 +90,7 @@ TECH_TICKERS      = {"AAPL","NVDA","META","AMZN","GOOG",
 # 高波动科技股：ATR倍数放大
 HIGH_VOL_ATR: Dict[str, float] = {
     "TSLA": 5.0, "NVDA": 5.0, "HOOD": 5.0, "PLTR": 4.5,
+    "META": 2.0,
 }
 
 TICKER_PARAMS: Dict[str, Dict] = {
@@ -98,7 +99,7 @@ TICKER_PARAMS: Dict[str, Dict] = {
     "SI=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.06, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
     "CL=F": {"n_states": 5, "bull_top": 2, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": True},
     "NVDA": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.25, "adx_entry": 20, "regime_reduce": False},
-    "META": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
+    "META": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.08, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
     "AMZN": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
     "GOOG": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},
     "MSFT": {"n_states": 5, "bull_top": 3, "min_conf": 3, "stop": -0.12, "hold_mult": 1.0,  "adx_entry": 20, "regime_reduce": False},

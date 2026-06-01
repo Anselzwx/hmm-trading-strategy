@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-05-19T01:38:09.427392",
+  "signals": {
+    "GC=F": {
+      "ticker": "GC=F",
+      "date": "2026-05-18",
+      "close": 4553.0,
+      "state": 1,
+      "regime": "Bull Run",
+      "is_bull": true,
+      "is_bear": false,
+      "signal_score": 3,
+      "min_conf": 3,
+      "adx": 26.09,
+      "adx_entry": 20,
+      "bull_prob": 0.0,
+      "bear_prob": 0.0,
+      "action_if_flat": "ENTER",
+      "action_if_long": "HOLD",
+      "stop_pct": -0.08,
+      "vt_scale": null,
+      "sideways_score": 1,
+      "signal_details": {
+        "rsi_ok": true,
+        "momentum_ok": false,
+        "vol_ok": false,
+        "volume_ok": true,
+        "adx_ok": true,
+        "above_ema50": false,
+        "above_ema200": true,
+        "macd_ok": false,
+        "above_bb_mid": false,
+        "stoch_ok": true,
+        "williams_ok": true,
+        "cci_ok": false,
+        "obv_ok": true,
+        "drawdown_ok": true
+      },
+      "posterior": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "AAPL": {
+      "ticker": "AAPL",
+      "date": "2026-05-18",
+      "close": 296.06,
+      "state": 3,
+      "regime": "Bull+",
+      "is_bull": true,
+      "is_bear": false,
+      "signal_score": 4,
+      "min_conf": 3,
+      "adx": 53.48,
+      "adx_entry": 20,
+      "bull_prob": 0.0,
+      "bear_prob": 0.0,
+      "action_if_flat": "ENTER",
+      "action_if_long": "HOLD",
+      "stop_pct": -0.06,
+      "vt_scale": null,
+      "sideways_score": 0,
+      "signal_details": {
+        "rsi_ok": true,
+        "momentum_ok": true,
+        "vol_ok": false,
+        "volume_ok": false,
+        "adx_ok": true,
+        "above_ema50": true,
+        "above_ema200": true,
+        "macd_ok": true,
+        "above_bb_mid": true,
+        "stoch_ok": false,
+        "williams_ok": false,
+        "cci_ok": true,
+        "obv_ok": true,
+        "drawdown_ok": true
+      },
+      "posterior": [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "errors": {
+    "SI=F": "HTTPSConnectionPool(host='financialmodelingprep.com', port=443): Read timed out. (read timeout=30)"
+  }
+}
