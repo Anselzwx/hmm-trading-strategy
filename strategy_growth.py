@@ -4,8 +4,8 @@ strategy_growth.py — Per-asset optimal momentum/trend strategies for growth st
 Each ticker uses the strategy with highest Calmar ratio from sensitivity analysis:
   AAPL  → Price > EMA200                         (Calmar 0.61, Return +3093%, MaxDD -34%)
   NVDA  → 52-Week High >80%                       (Calmar 0.94, Return +48446%, MaxDD -42%)
-  META  → EMA21>EMA50 + EMA200slope>0             (Calmar 0.93, Return +1207%, MaxDD -22%, 近3年+115%)
-          + Entry gate: RSI>58 AND EMA21slope>1%/5d (filters low-momentum entries)
+  META  → EMA21 > EMA50                           (Calmar 1.19, Return +2277%, MaxDD -21%, 近3年+112%)
+          Entry gate: RSI14>58 AND 20日波动率<3%    (filters low-momentum & high-vol whipsaws)
   AMZN  → EMA50 > EMA200                          (Calmar 0.50, Return +2294%, MaxDD -38%)
   GOOG  → 52-Week High >80%                        (Calmar 0.54, Return +2323%, MaxDD -35%)
   MSFT  → 52-Week High >80%                        (Calmar 0.38, Return +1002%, MaxDD -36%)
@@ -33,7 +33,7 @@ def _rsi(series: pd.Series, n: int = 14) -> pd.Series:
 GROWTH_STRATEGY: Dict[str, str] = {
     "AAPL": "ema200",
     "NVDA": "52wh80",
-    "META": "ema21_50_slope_rsi",
+    "META": "ema21_50_vol",
     "AMZN": "ema50_200",
     "GOOG": "52wh80",
     "MSFT": "52wh80",
@@ -48,6 +48,7 @@ STRATEGY_LABELS: Dict[str, str] = {
     "ema21_50":            "EMA21 > EMA50",
     "ema21_50_slope":      "EMA21>EMA50 + EMA200趋势向上",
     "ema21_50_slope_rsi":  "EMA21>EMA50 + EMA200趋势向上 + RSI动量确认",
+    "ema21_50_vol":        "EMA21>EMA50（入场:RSI>58且低波动）",
     "ema50_200":           "EMA50 > EMA200",
     "buyhold":             "买入持有",
     "52wh75":              "近52周高点 >75%",
@@ -217,9 +218,7 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         signal = ((e21 > e50) & (e200_slope > 0)).shift(1).fillna(False).astype(int)
 
     elif strat == "ema21_50_slope_rsi":
-        # EMA21>EMA50 + EMA200 20-day slope>0 as trend filter (hold condition)
-        # Entry gate: RSI14>58 AND EMA21 5-day slope>1.0% at crossover bar
-        # Gate only blocks entries at the crossover moment — does NOT trigger exits
+        # Legacy — kept for reference, superseded by ema21_50_vol
         e21  = _ema(c, 21)
         e50  = _ema(c, 50)
         e200 = _ema(c, 200)
@@ -228,6 +227,22 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         rsi14       = _rsi(c, 14)
         signal      = ((e21 > e50) & (e200_slope > 0)).shift(1).fillna(False).astype(int)
         entry_gate  = ((rsi14 > 58) & (e21_slope5 > 1.0)).shift(1).fillna(False).astype(int)
+        result = _simulate_signal(df, signal, stop=-0.20, entry_gate=entry_gate)
+        result["strategy_type"]  = strat
+        result["strategy_label"] = STRATEGY_LABELS[strat]
+        return result
+
+    elif strat == "ema21_50_vol":
+        # META 专用策略 — 全参数扫描最优 (Calmar 1.19, Sharpe 1.04, 胜率 62.5%, MaxDD -21.4%)
+        # 持仓信号: EMA21 > EMA50 (趋势跟踪，不添加额外过滤以保留大牛市持仓)
+        # 入场门控: RSI14>58 (有动量) AND 20日波动率<3% (非高波震荡期)
+        # 门控只在信号从0→1的穿越时刻生效，不影响已有持仓的继续持有和退出
+        e21   = _ema(c, 21)
+        e50   = _ema(c, 50)
+        rsi14 = _rsi(c, 14)
+        vol20 = c.pct_change().rolling(20).std() * 100
+        signal     = (e21 > e50).shift(1).fillna(False).astype(int)
+        entry_gate = ((rsi14 > 58) & (vol20 < 3.0)).shift(1).fillna(False).astype(int)
         result = _simulate_signal(df, signal, stop=-0.20, entry_gate=entry_gate)
         result["strategy_type"]  = strat
         result["strategy_label"] = STRATEGY_LABELS[strat]
