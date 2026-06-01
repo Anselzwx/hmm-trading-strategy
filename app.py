@@ -1772,6 +1772,8 @@ def render_asset(ticker: str) -> None:
         st.caption(f"显示 {len(tdf_flt)} / {len(tdf_raw)} 笔交易")
 
         tdf_show = tdf_flt.copy()
+        if "pos_size_pct" not in tdf_show.columns:
+            tdf_show["pos_size_pct"] = 1.0
         tdf_show["entry_time"]   = pd.to_datetime(tdf_show["entry_time"]).dt.strftime("%Y-%m-%d %H:%M")
         tdf_show["exit_time"]    = pd.to_datetime(tdf_show["exit_time"]).dt.strftime("%Y-%m-%d %H:%M")
         tdf_show["entry_price"]  = tdf_show["entry_price"].map("${:,.2f}".format)
