@@ -17,14 +17,15 @@ def run_strategy_c(df: pd.DataFrame, ticker: str) -> Dict:
     df["ema200"] = _ema(df["Close"], 200)
     df["signal"] = (df["ema50"] > df["ema200"]).astype(int)
 
-    capital   = float(STARTING_CAP)
-    position  = 0.0
-    in_trade  = False
-    entry_price = 0.0
-    equity_curve = []
-    trades = []
-    entry_time = None
-    hold_bars  = 0
+    capital       = float(STARTING_CAP)
+    position      = 0.0
+    in_trade      = False
+    entry_price   = 0.0
+    entry_capital = 0.0
+    equity_curve  = []
+    trades        = []
+    entry_time    = None
+    hold_bars     = 0
 
     for ts, row in df.iterrows():
         price = float(row["Close"])
@@ -45,10 +46,12 @@ def run_strategy_c(df: pd.DataFrame, ticker: str) -> Dict:
                                 "entry_price": entry_price, "exit_price": price,
                                 "pnl": pnl, "hold_bars": hold_bars,
                                 "pos_size_pct": 0.8, "exit_reason": exit_reason,
-                                "return_pct": ret*100*LEVERAGE})
+                                "return_pct": ret*100*LEVERAGE,
+                                "entry_capital": entry_capital, "exit_capital": capital})
                 position = 0.0; in_trade = False; hold_bars = 0
 
         if not in_trade and sig == 1:
+            entry_capital = capital
             position    = capital * 0.8 / price
             entry_price = price * (1 + FRICTION_PCT)
             entry_time  = ts; in_trade = True; hold_bars = 0

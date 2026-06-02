@@ -429,6 +429,7 @@ def _simulate(df: pd.DataFrame,
     equity_curve  = []
     trades        = []
 
+    entry_capital           = 0.0
     consec_stops            = 0
     after_stopout           = False
     bear_consec             = 0
@@ -508,6 +509,8 @@ def _simulate(df: pd.DataFrame,
                         "sideways_score": sw_score,
                         "regime_reduce_triggered": False, "vt_scale": vt_scale,
                         "direction":    "short",
+                        "entry_capital": entry_capital,
+                        "exit_capital":  capital,
                     })
                     position = 0.0; in_trade = False; is_short = False
                     hold_bars = 0; bear_consec = 0
@@ -577,6 +580,8 @@ def _simulate(df: pd.DataFrame,
                         "regime_reduce_triggered": regime_reduce_triggered,
                         "vt_scale":                vt_scale,
                         "direction":               "long",
+                        "entry_capital":           entry_capital,
+                        "exit_capital":            capital,
                     })
                     position, in_trade, hold_bars  = 0.0, False, 0
                     bear_consec                    = 0
@@ -629,6 +634,7 @@ def _simulate(df: pd.DataFrame,
 
             atr_val      = float(row.get("atr", price * 0.01))
             exec_price   = float(row.get("next_open", price))   # 次日开盘价执行
+            entry_capital = capital
             position     = capital * pos_size_pct / exec_price
             entry_price  = exec_price * (1 + friction_pct)
             stop_price   = entry_price * (1 + stop_loss_pct)
@@ -667,6 +673,7 @@ def _simulate(df: pd.DataFrame,
 
             atr_val      = float(row.get("atr", price * 0.01))
             exec_price   = float(row.get("next_open", price))   # 次日开盘价执行
+            entry_capital = capital
             position     = capital * pos_size_pct / exec_price
             entry_price  = exec_price * (1 - friction_pct)
             stop_price   = entry_price * (1 + SHORT_STOP_PCT)
@@ -723,6 +730,8 @@ def _simulate(df: pd.DataFrame,
             "regime_reduce_triggered": regime_reduce_triggered,
             "vt_scale":                vt_scale,
             "direction":               direction,
+            "entry_capital":           entry_capital,
+            "exit_capital":            capital,
         })
 
     return equity_curve, trades

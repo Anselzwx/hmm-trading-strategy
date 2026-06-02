@@ -108,6 +108,7 @@ def _simulate_signal(
     opens    = df["Open"].values
     closes   = df["Close"].values
     idx      = df.index
+    entry_capital = 0.0
 
     for i in range(len(df)):
         price = closes[i]
@@ -124,12 +125,14 @@ def _simulate_signal(
                 pnl         = shares * (exit_price * (1 - FRICTION_PCT) - entry_p)
                 cap        += pnl
                 trades.append({
-                    "entry_time":  entry_ts,  "exit_time": idx[i],
-                    "entry_price": entry_p,   "exit_price": exit_price,
-                    "pnl": pnl, "hold_bars": hold_bars,
-                    "return_pct": (exit_price / entry_p - 1) * 100,
-                    "exit_reason": STRATEGY_LABELS.get(
+                    "entry_time":     entry_ts,  "exit_time": idx[i],
+                    "entry_price":    entry_p,   "exit_price": exit_price,
+                    "pnl":            pnl,        "hold_bars": hold_bars,
+                    "return_pct":     (exit_price / entry_p - 1) * 100,
+                    "exit_reason":    STRATEGY_LABELS.get(
                         GROWTH_STRATEGY.get("", ""), "Signal Exit"),
+                    "entry_capital":  entry_capital,
+                    "exit_capital":   cap,
                 })
                 in_trade = False; shares = 0.0; hold_bars = 0
                 equity.append(cap)
@@ -139,11 +142,13 @@ def _simulate_signal(
                 pnl   = shares * (price * (1 - FRICTION_PCT) - entry_p)
                 cap  += pnl
                 trades.append({
-                    "entry_time":  entry_ts, "exit_time": idx[i],
-                    "entry_price": entry_p,  "exit_price": price,
-                    "pnl": pnl, "hold_bars": hold_bars,
-                    "return_pct": (price / entry_p - 1) * 100,
-                    "exit_reason": exit_reason,
+                    "entry_time":    entry_ts, "exit_time": idx[i],
+                    "entry_price":   entry_p,  "exit_price": price,
+                    "pnl":           pnl,       "hold_bars": hold_bars,
+                    "return_pct":    (price / entry_p - 1) * 100,
+                    "exit_reason":   exit_reason,
+                    "entry_capital": entry_capital,
+                    "exit_capital":  cap,
                 })
                 in_trade = False; shares = 0.0; hold_bars = 0
                 equity.append(cap)
@@ -156,6 +161,7 @@ def _simulate_signal(
             is_fresh = (i < 2) or (sig_vals[i - 2] == 0)
             gate_ok  = (gate_vals is None) or (gate_vals[i - 1] == 1)
             if is_fresh and gate_ok:
+                entry_capital = cap
                 entry_p  = opens[i] * (1 + FRICTION_PCT)
                 shares   = cap / entry_p
                 in_trade = True
@@ -174,11 +180,13 @@ def _simulate_signal(
         pnl = shares * (exit_price * (1 - FRICTION_PCT) - entry_p)
         cap += pnl
         trades.append({
-            "entry_time":  entry_ts, "exit_time": idx[-1],
-            "entry_price": entry_p,  "exit_price": exit_price,
-            "pnl": pnl, "hold_bars": hold_bars,
-            "return_pct": (exit_price / entry_p - 1) * 100,
-            "exit_reason": "持仓中",
+            "entry_time":    entry_ts, "exit_time": idx[-1],
+            "entry_price":   entry_p,  "exit_price": exit_price,
+            "pnl":           pnl,       "hold_bars": hold_bars,
+            "return_pct":    (exit_price / entry_p - 1) * 100,
+            "exit_reason":   "持仓中",
+            "entry_capital": entry_capital,
+            "exit_capital":  cap,
         })
         equity[-1] = cap
 

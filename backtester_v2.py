@@ -166,17 +166,18 @@ def _simulate_v2(df: pd.DataFrame, ticker: str) -> Tuple[List, List]:
     init_margin  = mp["initial_margin"]
     maint_margin = mp["maintenance_margin"]
 
-    capital      = float(STARTING_CAP)
-    position     = 0.0
-    in_trade     = False
-    entry_price  = 0.0
-    entry_time   = None
-    hold_bars    = 0
-    peak_price   = 0.0          # highest price since entry（用于 trailing stop）
-    trail_active = False        # trailing stop 是否已激活
-    bear_consec  = 0
-    cooldown     = 0
-    pos_size_pct = 0.0
+    capital       = float(STARTING_CAP)
+    position      = 0.0
+    in_trade      = False
+    entry_price   = 0.0
+    entry_time    = None
+    hold_bars     = 0
+    peak_price    = 0.0          # highest price since entry（用于 trailing stop）
+    trail_active  = False        # trailing stop 是否已激活
+    bear_consec   = 0
+    cooldown      = 0
+    pos_size_pct  = 0.0
+    entry_capital = 0.0
 
     equity_curve = []
     trades       = []
@@ -228,17 +229,19 @@ def _simulate_v2(df: pd.DataFrame, ticker: str) -> Tuple[List, List]:
                 pnl            = (exit_price_net - entry_price) * position * LEVERAGE
                 capital       += pnl
                 trades.append({
-                    "entry_time":   entry_time,
-                    "exit_time":    ts,
-                    "entry_price":  entry_price,
-                    "exit_price":   price,
-                    "pnl":          pnl,
-                    "pos_size_pct": pos_size_pct,
-                    "exit_reason":  exit_reason,
-                    "hold_bars":    hold_bars,
-                    "return_pct":   (exit_price_net / entry_price - 1) * 100 * LEVERAGE,
-                    "peak_price":   peak_price,
-                    "trail_active": trail_active,
+                    "entry_time":    entry_time,
+                    "exit_time":     ts,
+                    "entry_price":   entry_price,
+                    "exit_price":    price,
+                    "pnl":           pnl,
+                    "pos_size_pct":  pos_size_pct,
+                    "exit_reason":   exit_reason,
+                    "hold_bars":     hold_bars,
+                    "return_pct":    (exit_price_net / entry_price - 1) * 100 * LEVERAGE,
+                    "peak_price":    peak_price,
+                    "trail_active":  trail_active,
+                    "entry_capital": entry_capital,
+                    "exit_capital":  capital,
                 })
                 position     = 0.0
                 in_trade     = False
@@ -262,6 +265,7 @@ def _simulate_v2(df: pd.DataFrame, ticker: str) -> Tuple[List, List]:
             rsi_val = float(row.get("rsi", 50))
             pos_size_pct = _dynamic_position_size(trigger_count, adx_val, rsi_val, max_pos)
 
+            entry_capital = capital
             position    = capital * pos_size_pct / price
             entry_price = price * (1 + friction)
             entry_time  = ts
@@ -281,17 +285,19 @@ def _simulate_v2(df: pd.DataFrame, ticker: str) -> Tuple[List, List]:
         pnl            = (last_price_net - entry_price) * position * LEVERAGE
         capital       += pnl
         trades.append({
-            "entry_time":   entry_time,
-            "exit_time":    df.index[-1],
-            "entry_price":  entry_price,
-            "exit_price":   last_price,
-            "pnl":          pnl,
-            "pos_size_pct": pos_size_pct,
-            "exit_reason":  "End of data",
-            "hold_bars":    hold_bars,
-            "return_pct":   (last_price - entry_price) / entry_price * 100 * LEVERAGE,
-            "peak_price":   peak_price,
-            "trail_active": trail_active,
+            "entry_time":    entry_time,
+            "exit_time":     df.index[-1],
+            "entry_price":   entry_price,
+            "exit_price":    last_price,
+            "pnl":           pnl,
+            "pos_size_pct":  pos_size_pct,
+            "exit_reason":   "End of data",
+            "hold_bars":     hold_bars,
+            "return_pct":    (last_price - entry_price) / entry_price * 100 * LEVERAGE,
+            "peak_price":    peak_price,
+            "trail_active":  trail_active,
+            "entry_capital": entry_capital,
+            "exit_capital":  capital,
         })
 
     return equity_curve, trades

@@ -1774,16 +1774,22 @@ def render_asset(ticker: str) -> None:
         tdf_show = tdf_flt.copy()
         if "pos_size_pct" not in tdf_show.columns:
             tdf_show["pos_size_pct"] = 1.0
-        tdf_show["entry_time"]   = pd.to_datetime(tdf_show["entry_time"]).dt.strftime("%Y-%m-%d %H:%M")
-        tdf_show["exit_time"]    = pd.to_datetime(tdf_show["exit_time"]).dt.strftime("%Y-%m-%d %H:%M")
-        tdf_show["entry_price"]  = tdf_show["entry_price"].map("${:,.2f}".format)
-        tdf_show["exit_price"]   = tdf_show["exit_price"].map("${:,.2f}".format)
-        tdf_show["pnl"]          = tdf_show["pnl"].map("${:+,.2f}".format)
-        tdf_show["pos_size_pct"] = tdf_show["pos_size_pct"].map(lambda x: f"{x*100:.0f}%")
-        tdf_show["return_pct"]   = tdf_show["return_pct"].map(lambda x: f"{x:+.1f}%")
+        if "entry_capital" not in tdf_show.columns:
+            tdf_show["entry_capital"] = float("nan")
+        if "exit_capital" not in tdf_show.columns:
+            tdf_show["exit_capital"] = float("nan")
+        tdf_show["entry_time"]    = pd.to_datetime(tdf_show["entry_time"]).dt.strftime("%Y-%m-%d %H:%M")
+        tdf_show["exit_time"]     = pd.to_datetime(tdf_show["exit_time"]).dt.strftime("%Y-%m-%d %H:%M")
+        tdf_show["entry_price"]   = tdf_show["entry_price"].map("${:,.2f}".format)
+        tdf_show["exit_price"]    = tdf_show["exit_price"].map("${:,.2f}".format)
+        tdf_show["pnl"]           = tdf_show["pnl"].map("${:+,.2f}".format)
+        tdf_show["pos_size_pct"]  = tdf_show["pos_size_pct"].map(lambda x: f"{x*100:.0f}%")
+        tdf_show["return_pct"]    = tdf_show["return_pct"].map(lambda x: f"{x:+.1f}%")
+        tdf_show["entry_capital"] = tdf_show["entry_capital"].map(lambda x: f"${x:,.0f}" if pd.notna(x) else "-")
+        tdf_show["exit_capital"]  = tdf_show["exit_capital"].map(lambda x: f"${x:,.0f}" if pd.notna(x) else "-")
         tdf_show = tdf_show[["entry_time","exit_time","entry_regime","entry_price","exit_price",
-                              "pos_size_pct","pnl","return_pct","hold_bars","exit_reason"]]
-        tdf_show.columns = ["入场时间","出场时间","入场Regime","入场价","出场价","仓位","盈亏","收益率","持仓bar","出场原因"]
+                              "pos_size_pct","entry_capital","exit_capital","pnl","return_pct","hold_bars","exit_reason"]]
+        tdf_show.columns = ["入场时间","出场时间","入场Regime","入场价","出场价","仓位","入场本金","交易后金额","盈亏","收益率","持仓bar","出场原因"]
         st.dataframe(tdf_show, use_container_width=True, hide_index=True)
 
     # ── XGBoost 多因子预测（仅 Gold）────────────────────────────

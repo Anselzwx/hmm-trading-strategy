@@ -34,14 +34,15 @@ def run_strategy_d(df: pd.DataFrame, ticker: str) -> Dict:
     df["bb_mid"]   = mid
     df["bb_lower"] = mid - 2*std
 
-    capital     = float(STARTING_CAP)
-    position    = 0.0
-    in_trade    = False
-    entry_price = 0.0
-    entry_time  = None
-    hold_bars   = 0
-    equity_curve = []
-    trades = []
+    capital       = float(STARTING_CAP)
+    position      = 0.0
+    in_trade      = False
+    entry_price   = 0.0
+    entry_capital = 0.0
+    entry_time    = None
+    hold_bars     = 0
+    equity_curve  = []
+    trades        = []
 
     for ts, row in df.iterrows():
         price = float(row["Close"])
@@ -64,10 +65,12 @@ def run_strategy_d(df: pd.DataFrame, ticker: str) -> Dict:
                                 "entry_price": entry_price, "exit_price": price,
                                 "pnl": pnl, "hold_bars": hold_bars,
                                 "pos_size_pct": 0.8, "exit_reason": exit_reason,
-                                "return_pct": ret*100*LEVERAGE})
+                                "return_pct": ret*100*LEVERAGE,
+                                "entry_capital": entry_capital, "exit_capital": capital})
                 position = 0.0; in_trade = False; hold_bars = 0
 
         if not in_trade and is_bull and price > float(row.get("bb_upper", float("inf"))):
+            entry_capital = capital
             position    = capital * 0.8 / price
             entry_price = price * (1 + FRICTION_PCT)
             entry_time  = ts; in_trade = True; hold_bars = 0
