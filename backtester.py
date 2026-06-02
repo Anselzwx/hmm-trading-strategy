@@ -411,7 +411,7 @@ def _simulate(df: pd.DataFrame,
     adx_entry         = tp.get("adx_entry", 25)
     # 波动率归一化仓位：全局启用
     use_vol_target    = True
-    VT_MIN, VT_MAX    = 0.5, 1.5
+    VT_MIN, VT_MAX    = 0.5, 1.0
 
     capital       = STARTING_CAP
     position      = 0.0
