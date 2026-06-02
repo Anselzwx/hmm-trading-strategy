@@ -9,7 +9,8 @@ Each ticker uses the strategy with highest Calmar ratio from sensitivity analysi
   AMZN  → EMA50 > EMA200                          (Calmar 0.50, Return +2294%, MaxDD -38%)
   GOOG  → 52-Week High >80%                        (Calmar 0.54, Return +2323%, MaxDD -35%)
   MSFT  → 52-Week High >80%                        (Calmar 0.38, Return +1002%, MaxDD -36%)
-  TSLA  → Buy & Hold                               (no strategy beats B&H, stay invested)
+  TSLA  → EMA10 > EMA30                           (Calmar 0.49, Return +3750%, MaxDD -53%, Sharpe 0.75)
+          Entry gate: RSI14>55 AND 20日波动率<6%    (filters low-momentum & extreme-vol entries)
   HOOD  → 52-Week High >75%                        (Calmar 1.32, Return +503%, MaxDD -34%)
   PLTR  → Price > EMA200                           (Calmar 1.33, Return +2303%, MaxDD -57%)
 """
@@ -37,7 +38,7 @@ GROWTH_STRATEGY: Dict[str, str] = {
     "AMZN": "ema50_200",
     "GOOG": "52wh80",
     "MSFT": "52wh80",
-    "TSLA": "buyhold",
+    "TSLA": "ema10_30_vol",
     "HOOD": "52wh75",
     "PLTR": "ema200",
 }
@@ -52,6 +53,7 @@ STRATEGY_LABELS: Dict[str, str] = {
     "ema50_200":           "EMA50 > EMA200",
     "buyhold":             "买入持有",
     "52wh75":              "近52周高点 >75%",
+    "ema10_30_vol":        "EMA10>EMA30（入场:RSI>55且低波动）",
 }
 
 
@@ -268,6 +270,21 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
     elif strat == "52wh75":
         high52 = c.rolling(252, min_periods=50).max()
         signal = (c > high52 * 0.75).shift(1).fillna(False).astype(int)
+
+    elif strat == "ema10_30_vol":
+        # TSLA 专用策略 — 全参数扫描最优 (Calmar 0.49, Sharpe 0.75, Return +3750%, MaxDD -53%)
+        # 持仓信号: EMA10 > EMA30 (短周期趋势，捕捉TSLA快速动量)
+        # 入场门控: RSI14>55 (有动量) AND 20日波动率<6% (过滤极端波动期假突破)
+        e10   = _ema(c, 10)
+        e30   = _ema(c, 30)
+        rsi14 = _rsi(c, 14)
+        vol20 = c.pct_change().rolling(20).std() * 100
+        signal     = (e10 > e30).shift(1).fillna(False).astype(int)
+        entry_gate = ((rsi14 > 55) & (vol20 < 6.0)).shift(1).fillna(False).astype(int)
+        result = _simulate_signal(df, signal, stop=-0.20, entry_gate=entry_gate)
+        result["strategy_type"]  = strat
+        result["strategy_label"] = STRATEGY_LABELS[strat]
+        return result
 
     elif strat == "buyhold":
         signal = pd.Series(1, index=df.index)
