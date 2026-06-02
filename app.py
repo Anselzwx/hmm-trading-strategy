@@ -25,12 +25,18 @@ def _safe_filename(ticker: str) -> str:
     return ticker.replace("=", "_").replace("/", "_")
 
 @st.cache_data(show_spinner=False)
-def _load_precomputed(ticker: str):
+def _load_precomputed(ticker: str, _mtime: float = 0):
     path = os.path.join(RESULTS_DIR, f"{_safe_filename(ticker)}.pkl")
     if os.path.exists(path):
         with open(path, "rb") as f:
             return pickle.load(f)
     return None
+
+
+def _load_result(ticker: str):
+    path = os.path.join(RESULTS_DIR, f"{_safe_filename(ticker)}.pkl")
+    mtime = os.path.getmtime(path) if os.path.exists(path) else 0
+    return _load_precomputed(ticker, _mtime=mtime)
 
 def _computed_at() -> str:
     path = os.path.join(RESULTS_DIR, "computed_at.txt")
@@ -203,7 +209,7 @@ html, body, [class*="css"] {{ font-family: 'Inter', -apple-system, sans-serif; b
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_asset(ticker: str) -> dict:
-    precomputed = _load_precomputed(ticker)
+    precomputed = _load_result(ticker)
     if precomputed is not None:
         return precomputed
     df = fetch_data(ticker)
@@ -2069,7 +2075,7 @@ def render_portfolio_tab() -> None:
     metrics_all = {}
     bull_ratios = {}
     for t in ALL_TICKERS:
-        r = _load_precomputed(t)
+        r = _load_result(t)
         if r is None:
             continue
         eq_curves[t]   = pd.Series(r["df"]["equity"].values, index=r["df"].index)
