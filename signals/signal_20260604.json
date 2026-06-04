@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-04T16:11:33.527155",
+  "generated_at": "2026-06-04T16:19:26.709820",
   "signals": {
     "GC=F": {
       "ticker": "GC=F",
       "date": "2026-06-04",
-      "close": 4488.3,
+      "close": 4489.5,
       "state": 4,
       "regime": "Bull Run",
       "is_bull": true,
@@ -47,7 +47,7 @@
     "SI=F": {
       "ticker": "SI=F",
       "date": "2026-06-04",
-      "close": 73.345,
+      "close": 73.395,
       "state": 3,
       "regime": "Warming Up",
       "is_bull": true,
@@ -90,7 +90,7 @@
     "CL=F": {
       "ticker": "CL=F",
       "date": "2026-06-04",
-      "close": 95.53,
+      "close": 95.05,
       "state": 0,
       "regime": "Bull Run",
       "is_bull": false,
@@ -112,7 +112,7 @@
         "vol_ok": false,
         "volume_ok": false,
         "adx_ok": true,
-        "above_ema50": true,
+        "above_ema50": false,
         "above_ema200": true,
         "macd_ok": true,
         "above_bb_mid": false,
