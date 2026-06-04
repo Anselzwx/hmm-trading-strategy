@@ -1923,7 +1923,7 @@ def render_signals_tab() -> None:
         "CL=F": "🛢 Oil",     "NVDA": "🟩 NVDA",    "META": "🔵 META",
         "AMZN": "📦 AMZN",   "GOOG": "🔍 GOOG",    "MSFT": "🪟 MSFT",
         "TSLA": "⚡ TSLA",    "HOOD": "🪶 HOOD",    "SPY":  "📊 SPY",
-        "FXI":  "🇨🇳 FXI",    "PLTR": "🛡 PLTR",
+        "FXI":  "🇨🇳 FXI",    "PLTR": "🛡 PLTR",   "SOXL": "💎 SOXL",
     }
     all_signal_tickers = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR","SOXL"]
 
@@ -1944,7 +1944,7 @@ def render_signals_tab() -> None:
                 _cl = _s.get("close", 0)
                 _bl = _s.get("is_bull", False)
                 _af_c  = _ACTION_COLOR.get(_af, "#94a3b8")
-                _reg_c = "#00c864" if _bl else "#ff5252"
+                _reg_c = "#00c864" if _bl else "#ff52dc"
                 with _grid_cols[_i]:
                     st.markdown(
                         f'<div class="metric-card" style="padding:10px 8px">'

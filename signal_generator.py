@@ -183,6 +183,71 @@ def generate_signal(ticker: str) -> Dict:
     }
 
 
+def generate_signal_growth(ticker: str) -> Dict:
+    """Signal generator for growth/trend stocks using their optimal EMA strategy."""
+    from strategy_growth import GROWTH_STRATEGY, STRATEGY_LABELS
+    from backtester import _ema
+
+    df  = fetch_data(ticker, force_refresh=True)
+    c   = df["Close"]
+    strat = GROWTH_STRATEGY.get(ticker)
+
+    # Build EMA-based signal matching the strategy
+    if strat in ("ema200",):
+        e_fast = _ema(c, 200); e_slow = None
+        in_signal = bool(c.iloc[-2] > e_fast.iloc[-2])
+        label = f"Price > EMA200  (EMA200=${e_fast.iloc[-1]:.2f})"
+    elif strat in ("ema21_50", "ema21_50_vol"):
+        e_fast = _ema(c, 21); e_slow = _ema(c, 50)
+        in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])
+        label = f"EMA21 > EMA50  (EMA21=${e_fast.iloc[-1]:.2f} EMA50=${e_slow.iloc[-1]:.2f})"
+    elif strat == "ema50_200":
+        e_fast = _ema(c, 50); e_slow = _ema(c, 200)
+        in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])
+        label = f"EMA50 > EMA200  (EMA50=${e_fast.iloc[-1]:.2f} EMA200=${e_slow.iloc[-1]:.2f})"
+    elif strat == "ema7_21":
+        e_fast = _ema(c, 7); e_slow = _ema(c, 21)
+        in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])
+        label = f"EMA7 > EMA21  (EMA7=${e_fast.iloc[-1]:.2f} EMA21=${e_slow.iloc[-1]:.2f})"
+    elif strat in ("52wh80", "52wh75"):
+        pct = 0.80 if strat == "52wh80" else 0.75
+        h52 = c.rolling(252, min_periods=50).max()
+        in_signal = bool(c.iloc[-2] > h52.iloc[-2] * pct)
+        label = f"Price > 52wHigh×{pct:.0%}  (52wH=${h52.iloc[-1]:.2f})"
+    elif strat == "buyhold":
+        in_signal = True
+        label = "Buy & Hold"
+    else:
+        in_signal = True
+        label = STRATEGY_LABELS.get(strat, strat)
+
+    action_if_flat = "ENTER" if in_signal else "STAY_OUT"
+    action_if_long = "HOLD"  if in_signal else "EXIT"
+
+    return {
+        "ticker":         ticker,
+        "date":           df.index[-1].strftime("%Y-%m-%d"),
+        "close":          round(float(c.iloc[-1]), 4),
+        "regime":         label,
+        "is_bull":        in_signal,
+        "is_bear":        not in_signal,
+        "signal_score":   1 if in_signal else 0,
+        "min_conf":       1,
+        "adx":            0.0,
+        "adx_entry":      0,
+        "bull_prob":      1.0 if in_signal else 0.0,
+        "bear_prob":      0.0 if in_signal else 1.0,
+        "action_if_flat": action_if_flat,
+        "action_if_long": action_if_long,
+        "stop_pct":       -0.20,
+        "vt_scale":       None,
+        "sideways_score": 0,
+        "signal_details": {},
+        "posterior":      [],
+        "growth_strategy": STRATEGY_LABELS.get(strat, strat),
+    }
+
+
 # ── 主流程 ────────────────────────────────────────────────────
 
 def run():
@@ -190,13 +255,19 @@ def run():
     today     = datetime.now().strftime("%Y%m%d")
     out_path  = os.path.join(OUTPUT_DIR, f"signal_{today}.json")
 
-    tickers = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR"]
+    from strategy_growth import GROWTH_STRATEGY
+    HMM_TICKERS    = ["GC=F","SI=F","CL=F","SPY","FXI"]
+    GROWTH_TICKERS = ["AAPL","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","PLTR","SOXL"]
+    tickers = HMM_TICKERS + GROWTH_TICKERS
     signals = {}
     errors  = {}
 
     for ticker in tickers:
         try:
-            signals[ticker] = generate_signal(ticker)
+            if ticker in GROWTH_STRATEGY:
+                signals[ticker] = generate_signal_growth(ticker)
+            else:
+                signals[ticker] = generate_signal(ticker)
         except Exception as e:
             errors[ticker] = str(e)
 
@@ -222,13 +293,17 @@ def run():
         flag_long   = "🟢" if action_long == "HOLD"  else "🔴"
 
         print(f"\n  {ticker:6s}  {sig['date']}  Close={sig['close']:.4f}")
-        print(f"  Regime: {sig['regime']:15s}  State={sig['state']}  "
-              f"bull_prob={sig['bull_prob']:.1%}  bear_prob={sig['bear_prob']:.1%}")
-        print(f"  Score:  {sig['signal_score']}/14  (min={sig['min_conf']})  "
-              f"ADX={sig['adx']:.1f}  (gate={sig['adx_entry']})  "
-              f"Sideways={sig['sideways_score']}")
-        if sig["vt_scale"] is not None:
-            print(f"  Vol-target scale: {sig['vt_scale']:.3f}")
+        if "state" in sig:
+            print(f"  Regime: {sig['regime']:15s}  State={sig['state']}  "
+                  f"bull_prob={sig['bull_prob']:.1%}  bear_prob={sig['bear_prob']:.1%}")
+            print(f"  Score:  {sig['signal_score']}/14  (min={sig['min_conf']})  "
+                  f"ADX={sig['adx']:.1f}  (gate={sig['adx_entry']})  "
+                  f"Sideways={sig['sideways_score']}")
+            if sig["vt_scale"] is not None:
+                print(f"  Vol-target scale: {sig['vt_scale']:.3f}")
+        else:
+            print(f"  Strategy: {sig.get('growth_strategy', sig['regime'])}")
+            print(f"  Signal: {'✅ IN' if sig['is_bull'] else '❌ OUT'}")
         print(f"  Action if FLAT : {flag_flat} {action_flat}")
         print(f"  Action if LONG : {flag_long} {action_long}")
 
