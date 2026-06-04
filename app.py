@@ -2078,7 +2078,10 @@ def render_portfolio_tab() -> None:
         r = _load_result(t)
         if r is None:
             continue
-        eq_curves[t]   = pd.Series(r["df"]["equity"].values, index=r["df"].index)
+        if r.get("is_growth") and "equity_growth" in r:
+            eq_curves[t] = r["equity_growth"]
+        else:
+            eq_curves[t] = pd.Series(r["df"]["equity"].values, index=r["df"].index)
         metrics_all[t] = r["metrics"]
         # bull ratio：该品种历史上bull状态占比（用于动态权重）
         bull_ratios[t] = float(r["df"]["is_bull"].mean()) if "is_bull" in r["df"].columns else 0.5
