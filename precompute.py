@@ -12,7 +12,7 @@ from strategy_c     import run_strategy_c
 from strategy_d     import run_strategy_d
 from strategy_growth import run_strategy_growth, GROWTH_STRATEGY, STRATEGY_LABELS
 
-TICKERS = ["AAPL", "GC=F", "SI=F", "CL=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR"]
+TICKERS = ["AAPL", "GC=F", "SI=F", "CL=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR", "SOXL"]
 OUT_DIR = os.path.join(os.path.dirname(__file__), "results")
 
 

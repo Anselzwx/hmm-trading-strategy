@@ -13,6 +13,8 @@ Each ticker uses the strategy with highest Calmar ratio from sensitivity analysi
           No entry gate — gates block TSLA bull-run entries, hurting returns
   HOOD  → 52-Week High >75%                        (Calmar 1.32, Return +503%, MaxDD -34%)
   PLTR  → Price > EMA200                           (Calmar 1.33, Return +2303%, MaxDD -57%)
+  SOXL  → EMA21 > EMA50                           (Calmar 0.55, Return +18860%, MaxDD -70%, Sharpe 0.64)
+          No entry gate — 3x leveraged ETF, gates block bull-run entries
 """
 from __future__ import annotations
 
@@ -41,6 +43,7 @@ GROWTH_STRATEGY: Dict[str, str] = {
     "TSLA": "ema7_21",
     "HOOD": "52wh75",
     "PLTR": "ema200",
+    "SOXL": "ema21_50",
 }
 
 STRATEGY_LABELS: Dict[str, str] = {
@@ -50,6 +53,7 @@ STRATEGY_LABELS: Dict[str, str] = {
     "ema21_50_slope":      "EMA21>EMA50 + EMA200趋势向上",
     "ema21_50_slope_rsi":  "EMA21>EMA50 + EMA200趋势向上 + RSI动量确认",
     "ema21_50_vol":        "EMA21>EMA50（入场:RSI>58且低波动）",
+    "ema21_50":            "EMA21 > EMA50",
     "ema50_200":           "EMA50 > EMA200",
     "buyhold":             "买入持有",
     "52wh75":              "近52周高点 >75%",
@@ -257,6 +261,11 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         result["strategy_type"]  = strat
         result["strategy_label"] = STRATEGY_LABELS[strat]
         return result
+
+    elif strat == "ema21_50":
+        e21 = _ema(c, 21)
+        e50 = _ema(c, 50)
+        signal = (e21 > e50).shift(1).fillna(False).astype(int)
 
     elif strat == "ema50_200":
         e50  = _ema(c, 50)
