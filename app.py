@@ -2346,12 +2346,15 @@ def main() -> None:
 
     NAV_OPTIONS = ["📡  今日信号", "🌐  组合"] + [label for label, _ in _TICKER_MAP_BASE]
 
+    # key includes option count so adding tickers forces a fresh widget
+    _nav_key = f"_nav_radio_{len(NAV_OPTIONS)}"
+    _safe_idx = min(st.session_state.get("_nav_idx", 0), len(NAV_OPTIONS) - 1)
     _active = st.radio(
         "导航", NAV_OPTIONS,
-        index=st.session_state.get("_nav_idx", 0),
+        index=_safe_idx,
         horizontal=True,
         label_visibility="collapsed",
-        key="_nav_radio",
+        key=_nav_key,
     )
     st.session_state["_nav_idx"] = NAV_OPTIONS.index(_active)
 
