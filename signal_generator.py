@@ -209,6 +209,10 @@ def generate_signal_growth(ticker: str) -> Dict:
         e_fast = _ema(c, 7); e_slow = _ema(c, 21)
         in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])
         label = f"EMA7 > EMA21  (EMA7=${e_fast.iloc[-1]:.2f} EMA21=${e_slow.iloc[-1]:.2f})"
+    elif strat == "ema10_30":
+        e_fast = _ema(c, 10); e_slow = _ema(c, 30)
+        in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])
+        label = f"EMA10 > EMA30  (EMA10=${e_fast.iloc[-1]:.2f} EMA30=${e_slow.iloc[-1]:.2f})"
     elif strat in ("52wh80", "52wh75"):
         pct = 0.80 if strat == "52wh80" else 0.75
         h52 = c.rolling(252, min_periods=50).max()
@@ -257,7 +261,7 @@ def run():
 
     from strategy_growth import GROWTH_STRATEGY
     HMM_TICKERS    = ["GC=F","SI=F","CL=F","SPY","FXI"]
-    GROWTH_TICKERS = ["AAPL","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","PLTR","SOXL"]
+    GROWTH_TICKERS = ["AAPL","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","PLTR","SOXL","MU","MRVL","AMD"]
     tickers = HMM_TICKERS + GROWTH_TICKERS
     signals = {}
     errors  = {}

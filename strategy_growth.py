@@ -15,6 +15,9 @@ Each ticker uses the strategy with highest Calmar ratio from sensitivity analysi
   PLTR  → Price > EMA200                           (Calmar 1.33, Return +2303%, MaxDD -57%)
   SOXL  → EMA21 > EMA50                           (Calmar 0.55, Return +18860%, MaxDD -70%, Sharpe 0.64)
           No entry gate — 3x leveraged ETF, gates block bull-run entries
+  MU    → EMA21 > EMA50                           (Calmar 0.59, Return +15105%, MaxDD -53%, Sharpe 0.85)
+  MRVL  → EMA21 > EMA50                           (Calmar 0.42, Return +2293%, MaxDD -44%, Sharpe 0.54)
+  AMD   → EMA10 > EMA30                           (Calmar 0.37, Return +4408%, MaxDD -62%, Sharpe 0.54)
 """
 from __future__ import annotations
 
@@ -44,6 +47,9 @@ GROWTH_STRATEGY: Dict[str, str] = {
     "HOOD": "52wh75",
     "PLTR": "ema200",
     "SOXL": "ema21_50",
+    "MU":   "ema21_50",
+    "MRVL": "ema21_50",
+    "AMD":  "ema10_30",
 }
 
 STRATEGY_LABELS: Dict[str, str] = {
@@ -53,11 +59,11 @@ STRATEGY_LABELS: Dict[str, str] = {
     "ema21_50_slope":      "EMA21>EMA50 + EMA200趋势向上",
     "ema21_50_slope_rsi":  "EMA21>EMA50 + EMA200趋势向上 + RSI动量确认",
     "ema21_50_vol":        "EMA21>EMA50（入场:RSI>58且低波动）",
-    "ema21_50":            "EMA21 > EMA50",
     "ema50_200":           "EMA50 > EMA200",
     "buyhold":             "买入持有",
     "52wh75":              "近52周高点 >75%",
     "ema7_21":             "EMA7 > EMA21",
+    "ema10_30":            "EMA10 > EMA30",
 }
 
 
@@ -286,6 +292,12 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         e7  = _ema(c, 7)
         e21 = _ema(c, 21)
         signal = (e7 > e21).shift(1).fillna(False).astype(int)
+
+    elif strat == "ema10_30":
+        # AMD 专用策略 — 全参数扫描最优 (Calmar 0.37, Return +4408%, MaxDD -62%, 81笔)
+        e10 = _ema(c, 10)
+        e30 = _ema(c, 30)
+        signal = (e10 > e30).shift(1).fillna(False).astype(int)
 
     elif strat == "buyhold":
         signal = pd.Series(1, index=df.index)

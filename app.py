@@ -1924,8 +1924,9 @@ def render_signals_tab() -> None:
         "AMZN": "📦 AMZN",   "GOOG": "🔍 GOOG",    "MSFT": "🪟 MSFT",
         "TSLA": "⚡ TSLA",    "HOOD": "🪶 HOOD",    "SPY":  "📊 SPY",
         "FXI":  "🇨🇳 FXI",    "PLTR": "🛡 PLTR",   "SOXL": "💎 SOXL",
+        "MU":   "💾 MU",      "MRVL": "🔮 MRVL",   "AMD":  "🔴 AMD",
     }
-    all_signal_tickers = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR","SOXL"]
+    all_signal_tickers = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR","SOXL","MU","MRVL","AMD"]
 
     # Show quick summary grid first — two rows of 7
     sig_available = [t for t in all_signal_tickers if signals.get(t)]
@@ -2068,7 +2069,7 @@ def render_signals_tab() -> None:
 
 
 def render_portfolio_tab() -> None:
-    ALL_TICKERS = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR","SOXL"]
+    ALL_TICKERS = ["AAPL","GC=F","SI=F","CL=F","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","SPY","FXI","PLTR","SOXL","MU","MRVL","AMD"]
 
     # 加载所有品种数据
     eq_curves   = {}
@@ -2150,6 +2151,7 @@ def render_portfolio_tab() -> None:
             "NVDA": "🟩", "META": "🔵", "AMZN": "📦", "GOOG": "🔍",
             "MSFT": "🪟", "TSLA": "⚡", "HOOD": "🪶", "SPY":  "📊",
             "FXI":  "🇨🇳", "PLTR": "🛡", "SOXL": "💎",
+            "MU":   "💾",   "MRVL": "🔮",  "AMD":  "🔴",
         }
         _slider_cols = st.columns(2, gap="medium")
         _raw_w = {}
@@ -2341,6 +2343,7 @@ def main() -> None:
         ("📦  AMZN", "AMZN"), ("🔍  GOOG", "GOOG"), ("🪟  MSFT",  "MSFT"),
         ("⚡  TSLA", "TSLA"), ("🪶  HOOD", "HOOD"), ("📊  SPY",   "SPY"),
         ("🇨🇳  FXI", "FXI"),  ("🛡  PLTR", "PLTR"), ("💎  SOXL", "SOXL"),
+        ("💾  MU",   "MU"),   ("🔮  MRVL", "MRVL"), ("🔴  AMD",  "AMD"),
     ]
     NAV_TICKER = {label: tick for label, tick in _TICKER_MAP_BASE}
 
