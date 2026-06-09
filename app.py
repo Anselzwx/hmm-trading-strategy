@@ -318,11 +318,13 @@ def candle_chart(df: pd.DataFrame, trades: list, ticker: str) -> go.Figure:
             mode="markers", name="买入",
             marker=dict(symbol="triangle-up", size=12, color="#00e676",
                         line=dict(width=1, color="#fff"))), row=1, col=1)
-        fig.add_trace(go.Scatter(
-            x=[t["exit_time"] for t in trades], y=[t["exit_price"] for t in trades],
-            mode="markers", name="卖出",
-            marker=dict(symbol="triangle-down", size=12, color="#ff5252",
-                        line=dict(width=1, color="#fff"))), row=1, col=1)
+        _closed_trades = [t for t in trades if t.get("exit_reason") != "持仓中"]
+        if _closed_trades:
+            fig.add_trace(go.Scatter(
+                x=[t["exit_time"] for t in _closed_trades], y=[t["exit_price"] for t in _closed_trades],
+                mode="markers", name="卖出",
+                marker=dict(symbol="triangle-down", size=12, color="#ff5252",
+                            line=dict(width=1, color="#fff"))), row=1, col=1)
 
     colors_vol = ["#00e676" if c >= o else "#ff5252"
                   for c, o in zip(df["Close"], df["Open"])]
