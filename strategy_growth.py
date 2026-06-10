@@ -310,7 +310,12 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
     else:
         raise ValueError(f"Unknown growth strategy: {strat}")
 
-    result = _simulate_signal(df, signal, stop=-0.20)
+    TICKER_STOP = {
+        "MU": -0.10,
+    }
+    stop = TICKER_STOP.get(ticker, -0.20)
+
+    result = _simulate_signal(df, signal, stop=stop)
     result["strategy_type"]  = strat
     result["strategy_label"] = STRATEGY_LABELS[strat]
     return result
