@@ -6,7 +6,7 @@ Each ticker uses the strategy with highest Calmar ratio from sensitivity analysi
   NVDA  → 52-Week High >80%                       (Calmar 0.94, Return +48446%, MaxDD -42%)
   META  → EMA21 > EMA50                           (Calmar 1.19, Return +2277%, MaxDD -21%, 近3年+112%)
           Entry gate: RSI14>58 AND 20日波动率<3%    (filters low-momentum & high-vol whipsaws)
-  AMZN  → EMA50 > EMA200                          (Calmar 0.50, Return +2294%, MaxDD -38%)
+  AMZN  → 近52周高点 >70%                           (Calmar 0.59, Return +5406%, MaxDD -41%, 年化+24.4% ≈ 买入持有)
   GOOG  → 52-Week High >80%                        (Calmar 0.54, Return +2323%, MaxDD -35%)
   MSFT  → 52-Week High >80%                        (Calmar 0.38, Return +1002%, MaxDD -36%)
   TSLA  → EMA7 > EMA21                            (Calmar 0.79, Return +20240%, MaxDD -51%, Sharpe 0.95)
@@ -40,7 +40,7 @@ GROWTH_STRATEGY: Dict[str, str] = {
     "AAPL": "ema200",
     "NVDA": "52wh80",
     "META": "ema21_50_vol",
-    "AMZN": "ema50_200",
+    "AMZN": "52wh70",
     "GOOG": "52wh80",
     "MSFT": "52wh80",
     "TSLA": "ema7_21",
@@ -60,6 +60,7 @@ STRATEGY_LABELS: Dict[str, str] = {
     "ema21_50_slope_rsi":  "EMA21>EMA50 + EMA200趋势向上 + RSI动量确认",
     "ema21_50_vol":        "EMA21>EMA50（入场:RSI>58且低波动）",
     "ema50_200":           "EMA50 > EMA200",
+    "52wh70":              "近52周高点 >70%",
     "buyhold":             "买入持有",
     "52wh75":              "近52周高点 >75%",
     "ema7_21":             "EMA7 > EMA21",
@@ -277,6 +278,10 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         e50  = _ema(c, 50)
         e200 = _ema(c, 200)
         signal = (e50 > e200).shift(1).fillna(False).astype(int)
+
+    elif strat == "52wh70":
+        high52 = c.rolling(252, min_periods=50).max()
+        signal = (c > high52 * 0.70).shift(1).fillna(False).astype(int)
 
     elif strat == "52wh80":
         high52 = c.rolling(252, min_periods=50).max()

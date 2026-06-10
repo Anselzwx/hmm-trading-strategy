@@ -213,8 +213,8 @@ def generate_signal_growth(ticker: str) -> Dict:
         e_fast = _ema(c, 10); e_slow = _ema(c, 30)
         in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])
         label = f"EMA10 > EMA30  (EMA10=${e_fast.iloc[-1]:.2f} EMA30=${e_slow.iloc[-1]:.2f})"
-    elif strat in ("52wh80", "52wh75"):
-        pct = 0.80 if strat == "52wh80" else 0.75
+    elif strat in ("52wh80", "52wh75", "52wh70"):
+        pct = 0.80 if strat == "52wh80" else (0.75 if strat == "52wh75" else 0.70)
         h52 = c.rolling(252, min_periods=50).max()
         in_signal = bool(c.iloc[-2] > h52.iloc[-2] * pct)
         label = f"Price > 52wHigh×{pct:.0%}  (52wH=${h52.iloc[-1]:.2f})"
