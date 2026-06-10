@@ -197,10 +197,16 @@ def generate_signal_growth(ticker: str) -> Dict:
         e_fast = _ema(c, 200); e_slow = None
         in_signal = bool(c.iloc[-2] > e_fast.iloc[-2])
         label = f"Price > EMA200  (EMA200=${e_fast.iloc[-1]:.2f})"
-    elif strat in ("ema21_50", "ema21_50_vol"):
+    elif strat in ("ema21_50", "ema21_50_vol", "ema21_50_vol20"):
         e_fast = _ema(c, 21); e_slow = _ema(c, 50)
         in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])
-        label = f"EMA21 > EMA50  (EMA21=${e_fast.iloc[-1]:.2f} EMA50=${e_slow.iloc[-1]:.2f})"
+        if strat == "ema21_50_vol20":
+            vol_ma = df["Volume"].rolling(20).mean()
+            vol_ok = bool(df["Volume"].iloc[-2] > vol_ma.iloc[-2])
+            in_signal = in_signal and vol_ok
+            label = f"EMA21>EMA50 + 量>{vol_ma.iloc[-1]:.0f}  (EMA21=${e_fast.iloc[-1]:.2f} EMA50=${e_slow.iloc[-1]:.2f})"
+        else:
+            label = f"EMA21 > EMA50  (EMA21=${e_fast.iloc[-1]:.2f} EMA50=${e_slow.iloc[-1]:.2f})"
     elif strat == "ema50_200":
         e_fast = _ema(c, 50); e_slow = _ema(c, 200)
         in_signal = bool(e_fast.iloc[-2] > e_slow.iloc[-2])

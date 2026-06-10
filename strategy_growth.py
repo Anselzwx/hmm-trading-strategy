@@ -15,7 +15,7 @@ Each ticker uses the strategy with highest Calmar ratio from sensitivity analysi
   PLTR  → Price > EMA200                           (Calmar 1.33, Return +2303%, MaxDD -57%)
   SOXL  → EMA21 > EMA50                           (Calmar 0.55, Return +18860%, MaxDD -70%, Sharpe 0.64)
           No entry gate — 3x leveraged ETF, gates block bull-run entries
-  MU    → EMA21 > EMA50                           (Calmar 0.59, Return +15105%, MaxDD -53%, Sharpe 0.85)
+  MU    → EMA21 > EMA50 + 成交量>20日均量            (Calmar 0.65, Return +5400%, MaxDD -38%, Sharpe 0.87, 胜率64%)
   MRVL  → EMA21 > EMA50                           (Calmar 0.42, Return +2293%, MaxDD -44%, Sharpe 0.54)
   AMD   → EMA10 > EMA30                           (Calmar 0.37, Return +4408%, MaxDD -62%, Sharpe 0.54)
 """
@@ -47,7 +47,7 @@ GROWTH_STRATEGY: Dict[str, str] = {
     "HOOD": "52wh75",
     "PLTR": "ema200",
     "SOXL": "ema21_50",
-    "MU":   "ema21_50",
+    "MU":   "ema21_50_vol20",
     "MRVL": "ema21_50",
     "AMD":  "ema10_30",
 }
@@ -61,6 +61,7 @@ STRATEGY_LABELS: Dict[str, str] = {
     "ema21_50_vol":        "EMA21>EMA50（入场:RSI>58且低波动）",
     "ema50_200":           "EMA50 > EMA200",
     "52wh70":              "近52周高点 >70%",
+    "ema21_50_vol20":      "EMA21>EMA50（入场:量>20日均量）",
     "buyhold":             "买入持有",
     "52wh75":              "近52周高点 >75%",
     "ema7_21":             "EMA7 > EMA21",
@@ -229,6 +230,19 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         e21 = _ema(c, 21)
         e50 = _ema(c, 50)
         signal = (e21 > e50).shift(1).fillna(False).astype(int)
+
+    elif strat == "ema21_50_vol20":
+        # MU 专用策略 — 入场门控：成交量 > 20日均量（过滤低量假突破）
+        # Calmar 0.65, MaxDD -38%, 胜率64%, 止损-10%
+        e21    = _ema(c, 21)
+        e50    = _ema(c, 50)
+        vol_ma = df["Volume"].rolling(20).mean()
+        signal     = (e21 > e50).shift(1).fillna(False).astype(int)
+        entry_gate = (df["Volume"] > vol_ma).shift(1).fillna(False).astype(int)
+        result = _simulate_signal(df, signal, stop=-0.10, entry_gate=entry_gate)
+        result["strategy_type"]  = strat
+        result["strategy_label"] = STRATEGY_LABELS[strat]
+        return result
 
     elif strat == "ema21_50_slope":
         # EMA21>EMA50 且 EMA200 20日斜率>0（长期趋势未转头，过滤震荡假信号）
