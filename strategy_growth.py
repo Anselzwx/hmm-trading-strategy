@@ -98,19 +98,22 @@ def _simulate_signal(
     signal: pd.Series,
     stop: float = -0.20,
     entry_gate: pd.Series | None = None,
+    trail: float | None = None,
 ) -> Dict:
     """Simulate long-only strategy from a binary signal series (1=hold, 0=flat).
     Entry: next open after signal flips to 1.
-    Exit:  next open after signal flips to 0, or stop-loss intrabar.
+    Exit:  next open after signal flips to 0, stop-loss, or trailing stop intrabar.
 
     entry_gate: optional boolean series; when provided, an entry is only taken on
     a fresh signal crossover (0→1) if the gate was also 1 at that bar.
     Gate is NOT used to exit — it only blocks low-quality entries.
+    trail: trailing stop from peak (e.g. -0.12 means exit if price drops 12% from high).
     """
     cap       = float(STARTING_CAP)
     in_trade  = False
     entry_p   = 0.0
     shares    = 0.0
+    peak_p    = 0.0
     equity    = []
     trades    = []
     entry_ts  = None
@@ -130,10 +133,13 @@ def _simulate_signal(
 
         if in_trade:
             hold_bars += 1
+            peak_p = max(peak_p, price)
             ret = (price - entry_p) / entry_p
             exit_reason = None
             if ret <= stop:
                 exit_reason = f"StopLoss ({stop*100:.0f}%)"
+            elif trail is not None and (price - peak_p) / peak_p <= trail:
+                exit_reason = f"TrailingStop ({trail*100:.0f}%)"
             elif i > 0 and sig_vals[i - 1] == 0:
                 # signal flipped to 0 yesterday → exit at today's open
                 exit_price  = opens[i]
@@ -178,6 +184,7 @@ def _simulate_signal(
             if is_fresh and gate_ok:
                 entry_capital = cap
                 entry_p  = opens[i] * (1 + FRICTION_PCT)
+                peak_p   = entry_p
                 shares   = cap / entry_p
                 in_trade = True
                 entry_ts = idx[i]
@@ -224,12 +231,12 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
 
     # ── Build signal ───────────────────────────────────────────
     if strat == "ema200_rsi3065":
-        # MSFT 专用 — 价格>EMA200（长期趋势向上）且 RSI 在30-65区间（有动量但不超买）
+        # MSFT 专用 — 价格>EMA200 且 RSI 30-65，追踪止损-12%
         # 胜率64%，Calmar 0.23，MaxDD -44%
         e200  = _ema(c, 200)
         r14   = _rsi(c, 14)
         signal = ((c > e200) & (r14 > 30) & (r14 < 65)).shift(1).fillna(False).astype(int)
-        result = _simulate_signal(df, signal, stop=-0.10)
+        result = _simulate_signal(df, signal, stop=-0.10, trail=-0.12)
         result["strategy_type"]  = strat
         result["strategy_label"] = STRATEGY_LABELS[strat]
         return result
