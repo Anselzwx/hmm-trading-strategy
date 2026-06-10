@@ -193,7 +193,16 @@ def generate_signal_growth(ticker: str) -> Dict:
     strat = GROWTH_STRATEGY.get(ticker)
 
     # Build EMA-based signal matching the strategy
-    if strat in ("ema200",):
+    if strat == "ema200_rsi3065":
+        from backtester import _ema as _ema2
+        e200  = _ema2(c, 200)
+        delta = c.diff()
+        gain  = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+        loss  = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+        r14   = 100 - 100/(1+gain/loss.replace(0, float('nan')))
+        in_signal = bool((c.iloc[-2] > e200.iloc[-2]) and (r14.iloc[-2] > 30) and (r14.iloc[-2] < 65))
+        label = f"价格>EMA200 且 RSI 30-65  (EMA200=${e200.iloc[-1]:.2f} RSI={r14.iloc[-1]:.1f})"
+    elif strat in ("ema200",):
         e_fast = _ema(c, 200); e_slow = None
         in_signal = bool(c.iloc[-2] > e_fast.iloc[-2])
         label = f"Price > EMA200  (EMA200=${e_fast.iloc[-1]:.2f})"

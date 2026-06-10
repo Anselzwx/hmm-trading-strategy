@@ -8,7 +8,7 @@ Each ticker uses the strategy with highest Calmar ratio from sensitivity analysi
           Entry gate: RSI14>58 AND 20日波动率<3%    (filters low-momentum & high-vol whipsaws)
   AMZN  → 近52周高点 >70%                           (Calmar 0.59, Return +5406%, MaxDD -41%, 年化+24.4% ≈ 买入持有)
   GOOG  → 52-Week High >80%                        (Calmar 0.54, Return +2323%, MaxDD -35%)
-  MSFT  → 52-Week High >80%                        (Calmar 0.38, Return +1002%, MaxDD -36%)
+  MSFT  → 价格>EMA200 + RSI 30-65                   (Calmar 0.23, Return +?%, MaxDD -44%, 胜率64%)
   TSLA  → EMA7 > EMA21                            (Calmar 0.79, Return +20240%, MaxDD -51%, Sharpe 0.95)
           No entry gate — gates block TSLA bull-run entries, hurting returns
   HOOD  → 52-Week High >75%                        (Calmar 1.32, Return +503%, MaxDD -34%)
@@ -42,7 +42,7 @@ GROWTH_STRATEGY: Dict[str, str] = {
     "META": "ema21_50_vol",
     "AMZN": "52wh70",
     "GOOG": "52wh80",
-    "MSFT": "52wh80",
+    "MSFT": "ema200_rsi3065",
     "TSLA": "ema7_21",
     "HOOD": "52wh75",
     "PLTR": "ema200",
@@ -62,6 +62,7 @@ STRATEGY_LABELS: Dict[str, str] = {
     "ema50_200":           "EMA50 > EMA200",
     "52wh70":              "近52周高点 >70%",
     "ema21_50_vol20":      "EMA21>EMA50（入场:量>20日均量）",
+    "ema200_rsi3065":      "价格>EMA200 且 RSI 30-65",
     "buyhold":             "买入持有",
     "52wh75":              "近52周高点 >75%",
     "ema7_21":             "EMA7 > EMA21",
@@ -222,7 +223,18 @@ def run_strategy_growth(df: pd.DataFrame, ticker: str) -> Dict:
         raise ValueError(f"run_strategy_growth: {ticker} is not a growth ticker")
 
     # ── Build signal ───────────────────────────────────────────
-    if strat == "ema200":
+    if strat == "ema200_rsi3065":
+        # MSFT 专用 — 价格>EMA200（长期趋势向上）且 RSI 在30-65区间（有动量但不超买）
+        # 胜率64%，Calmar 0.23，MaxDD -44%
+        e200  = _ema(c, 200)
+        r14   = _rsi(c, 14)
+        signal = ((c > e200) & (r14 > 30) & (r14 < 65)).shift(1).fillna(False).astype(int)
+        result = _simulate_signal(df, signal, stop=-0.10)
+        result["strategy_type"]  = strat
+        result["strategy_label"] = STRATEGY_LABELS[strat]
+        return result
+
+    elif strat == "ema200":
         e200 = _ema(c, 200)
         signal = (c > e200).shift(1).fillna(False).astype(int)
 
