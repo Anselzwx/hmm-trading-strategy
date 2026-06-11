@@ -276,7 +276,7 @@ def run():
 
     from strategy_growth import GROWTH_STRATEGY
     HMM_TICKERS    = ["GC=F","SI=F","CL=F","SPY","FXI"]
-    GROWTH_TICKERS = ["AAPL","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","PLTR","SOXL","MU","MRVL","AMD"]
+    GROWTH_TICKERS = ["AAPL","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","PLTR","SOXL","MU","MRVL","AMD","ORCL"]
     tickers = HMM_TICKERS + GROWTH_TICKERS
     signals = {}
     errors  = {}

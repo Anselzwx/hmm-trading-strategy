@@ -18,6 +18,7 @@ Each ticker uses the strategy with highest Calmar ratio from sensitivity analysi
   MU    → EMA21 > EMA50 + 成交量>20日均量            (Calmar 0.65, Return +5400%, MaxDD -38%, Sharpe 0.87, 胜率64%)
   MRVL  → EMA21 > EMA50                           (Calmar 0.42, Return +2293%, MaxDD -44%, Sharpe 0.54)
   AMD   → EMA10 > EMA30                           (Calmar 0.37, Return +4408%, MaxDD -62%, Sharpe 0.54)
+  ORCL  → 近52周高点 >80%                           (Calmar 0.19, Return +419%, MaxDD -49%, 2020至今≈买入持有)
 """
 from __future__ import annotations
 
@@ -50,6 +51,7 @@ GROWTH_STRATEGY: Dict[str, str] = {
     "MU":   "ema21_50_vol20",
     "MRVL": "ema21_50",
     "AMD":  "ema10_30",
+    "ORCL": "52wh80",
 }
 
 STRATEGY_LABELS: Dict[str, str] = {
