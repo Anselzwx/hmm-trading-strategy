@@ -1,3 +1,10 @@
+[theme]
+base = "dark"
+backgroundColor = "#080c14"
+secondaryBackgroundColor = "#0f172a"
+textColor = "#f1f5f9"
+primaryColor = "#3b82f6"
+
 [server]
 maxMessageSize = 200
 headless = true
