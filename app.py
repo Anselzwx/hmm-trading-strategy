@@ -1638,9 +1638,9 @@ def render_asset(ticker: str) -> None:
         # Build monthly_df for growth strategy
         _eq_m = df["equity"].resample("ME").last()
         _monthly_ret = _eq_m.pct_change().dropna() * 100
-        _mdf = pd.DataFrame({"strategy": _monthly_ret})
-        _mdf["bh"] = (df["Close"].resample("ME").last().pct_change().dropna() * 100).reindex(_mdf.index)
-        _mdf["alpha"] = _mdf["strategy"] - _mdf["bh"]
+        _mdf = pd.DataFrame({"ret": _monthly_ret})
+        _mdf["bh_ret"] = (df["Close"].resample("ME").last().pct_change().dropna() * 100).reindex(_mdf.index)
+        _mdf["alpha_ret"] = _mdf["ret"] - _mdf["bh_ret"]
         _mdf["year"] = _mdf.index.year; _mdf["month"] = _mdf.index.month
         try:
             monthly_heatmap_tabbed(_mdf)
