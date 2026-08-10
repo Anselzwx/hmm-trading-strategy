@@ -243,6 +243,35 @@ def generate_signal_growth(ticker: str) -> Dict:
     action_if_flat = "ENTER" if in_signal else "STAY_OUT"
     action_if_long = "HOLD"  if in_signal else "EXIT"
 
+    # ── 14 信号明细（与 HMM 资产保持一致） ──────────────────────
+    try:
+        from backtester import compute_indicators
+        _dfi = compute_indicators(df.copy(), ticker)
+        _last = _dfi.iloc[-1]
+        _delta = c.diff()
+        _gain  = _delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
+        _loss  = (-_delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
+        _rsi14 = (100 - 100 / (1 + _gain / _loss.replace(0, float('nan')))).iloc[-1]
+        _high_max = c.rolling(252, min_periods=50).max().iloc[-1]
+        signal_details = {
+            "rsi_ok":       bool(_rsi14 < 90),
+            "momentum_ok":  bool(_last.get("momentum", 0) > 1.0),
+            "vol_ok":       bool(_last.get("volatility", 999) < 6.0),
+            "volume_ok":    bool(_last.get("Volume", 0) > _last.get("vol_sma20", float("inf"))),
+            "adx_ok":       bool(_last.get("adx", 0) > 25),
+            "above_ema50":  bool(c.iloc[-1] > _last.get("ema50", float("inf"))),
+            "above_ema200": bool(c.iloc[-1] > _last.get("ema200", float("inf"))),
+            "macd_ok":      bool(_last.get("macd_line", 0) > _last.get("macd_signal", 0)),
+            "above_bb_mid": bool(c.iloc[-1] > _last.get("bb_mid", float("inf"))),
+            "stoch_ok":     bool((_last.get("stoch_k", 0) > _last.get("stoch_d", 0)) and (_last.get("stoch_k", 0) < 80)),
+            "williams_ok":  bool(_last.get("williams_r", 0) < -20),
+            "cci_ok":       bool(_last.get("cci", 0) > 0),
+            "obv_ok":       bool(_last.get("obv", 0) > _last.get("obv_ema", float("inf"))),
+            "drawdown_ok":  bool(_high_max > 0 and (c.iloc[-1] / _high_max - 1) * 100 > -30),
+        }
+    except Exception:
+        signal_details = {}
+
     return {
         "ticker":         ticker,
         "date":           df.index[-1].strftime("%Y-%m-%d"),
@@ -261,7 +290,7 @@ def generate_signal_growth(ticker: str) -> Dict:
         "stop_pct":       -0.20,
         "vt_scale":       None,
         "sideways_score": 0,
-        "signal_details": {},
+        "signal_details": signal_details,
         "posterior":      [],
         "growth_strategy": STRATEGY_LABELS.get(strat, strat),
     }
