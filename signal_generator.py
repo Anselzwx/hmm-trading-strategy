@@ -34,6 +34,70 @@ from data_loader import fetch_data, DAILY_TICKERS
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "signals")
 
 
+# ── 基本面数据获取 ─────────────────────────────────────────────
+
+def fetch_fundamentals(ticker: str) -> Dict:
+    """拉取基本面数据：营收增速、估值、财报日。失败返回空dict。"""
+    try:
+        import yfinance as yf
+        from datetime import date, timedelta
+        t = yf.Ticker(ticker)
+        info = t.info
+        cal  = t.calendar or {}
+
+        rev_growth = info.get("revenueGrowth")        # 营收YoY增速，如 0.85 = 85%
+        ps         = info.get("priceToSalesTrailing12Months")
+        pe         = info.get("trailingPE")
+        profit_margin = info.get("profitMargins")
+
+        # 下次财报日
+        earnings_dates = cal.get("Earnings Date", [])
+        next_earnings  = earnings_dates[0] if earnings_dates else None
+
+        # 财报窗口保护：前3天+后3天
+        earnings_warning = False
+        if next_earnings:
+            today = date.today()
+            delta = (next_earnings - today).days
+            earnings_warning = (-3 <= delta <= 3)
+
+        # 估值风险标记
+        valuation_risk = "high" if (ps and ps > 50) else ("medium" if ps and ps > 20 else "low")
+
+        # 营收增速风险
+        rev_ok = (rev_growth is not None and rev_growth > 0)
+
+        # 综合基本面评分（0-3）
+        fa_score = 0
+        if rev_ok: fa_score += 1
+        if ps and ps < 20: fa_score += 1
+        if profit_margin and profit_margin > 0.10: fa_score += 1
+
+        # 基本面警告列表
+        warnings_list = []
+        if earnings_warning:
+            warnings_list.append(f"⚠️ 财报窗口期（{next_earnings}），建议不开新仓")
+        if not rev_ok:
+            warnings_list.append("⚠️ 营收同比负增长")
+        if valuation_risk == "high":
+            warnings_list.append(f"⚠️ 估值偏高 PS={ps:.1f}x")
+
+        return {
+            "rev_growth":      round(rev_growth * 100, 1) if rev_growth is not None else None,
+            "ps":              round(ps, 2) if ps else None,
+            "pe":              round(pe, 2) if pe else None,
+            "profit_margin":   round(profit_margin * 100, 1) if profit_margin else None,
+            "next_earnings":   str(next_earnings) if next_earnings else None,
+            "earnings_warning": earnings_warning,
+            "valuation_risk":  valuation_risk,
+            "rev_ok":          rev_ok,
+            "fa_score":        fa_score,
+            "warnings":        warnings_list,
+        }
+    except Exception:
+        return {}
+
+
 # ── 辅助 ─────────────────────────────────────────────────────
 
 def _regime_labels_by_rank(model, n_states: int) -> dict:
@@ -243,6 +307,12 @@ def generate_signal_growth(ticker: str) -> Dict:
     action_if_flat = "ENTER" if in_signal else "STAY_OUT"
     action_if_long = "HOLD"  if in_signal else "EXIT"
 
+    # ── 基本面过滤 ────────────────────────────────────────────────
+    fa = fetch_fundamentals(ticker)
+    # 财报窗口期：强制降级为 WATCH
+    if fa.get("earnings_warning") and action_if_flat == "ENTER":
+        action_if_flat = "WATCH"
+
     # ── 14 信号明细（与 HMM 资产保持一致） ──────────────────────
     try:
         from backtester import compute_indicators
@@ -290,9 +360,10 @@ def generate_signal_growth(ticker: str) -> Dict:
         "stop_pct":       -0.20,
         "vt_scale":       None,
         "sideways_score": 0,
-        "signal_details": signal_details,
-        "posterior":      [],
-        "growth_strategy": STRATEGY_LABELS.get(strat, strat),
+        "signal_details":   signal_details,
+        "posterior":        [],
+        "growth_strategy":  STRATEGY_LABELS.get(strat, strat),
+        "fundamentals":     fa,
     }
 
 

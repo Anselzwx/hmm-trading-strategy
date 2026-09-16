@@ -2063,6 +2063,36 @@ def render_signals_tab() -> None:
                 </div>
             </div>""", unsafe_allow_html=True)
 
+        # ── 基本面面板（仅成长股）────────────────────────────────
+        fa = sig.get("fundamentals", {})
+        if fa:
+            rev     = fa.get("rev_growth")
+            ps      = fa.get("ps")
+            pe      = fa.get("pe")
+            pm      = fa.get("profit_margin")
+            earn    = fa.get("next_earnings")
+            fa_sc   = fa.get("fa_score", 0)
+            warns   = fa.get("warnings", [])
+            val_risk = fa.get("valuation_risk", "low")
+            val_color = {"low": "#00e676", "medium": "#ffd740", "high": "#ff5252"}.get(val_risk, "#64748b")
+            fa_color  = "#00e676" if fa_sc >= 2 else ("#ffd740" if fa_sc == 1 else "#ff5252")
+
+            warn_html = "".join(f'<div style="font-size:0.72rem;color:#ffd740;margin-top:3px">{w}</div>' for w in warns)
+            st.markdown(f"""<div class="glass-card" style="padding:14px 18px;margin-top:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <span style="font-size:0.65rem;color:#475569;text-transform:uppercase;letter-spacing:1px">基本面</span>
+                    <span style="font-size:0.9rem;font-weight:800;color:{fa_color}">FA {fa_sc}/3</span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:0.72rem">
+                    <div><div style="color:#475569">营收增速</div><div style="color:#e2e8f0;font-weight:600">{f'+{rev:.1f}%' if rev and rev>0 else (f'{rev:.1f}%' if rev else '—')}</div></div>
+                    <div><div style="color:#475569">PS(TTM)</div><div style="color:{val_color};font-weight:600">{f'{ps:.1f}x' if ps else '—'}</div></div>
+                    <div><div style="color:#475569">PE(TTM)</div><div style="color:#e2e8f0;font-weight:600">{f'{pe:.1f}x' if pe else '—'}</div></div>
+                    <div><div style="color:#475569">利润率</div><div style="color:#e2e8f0;font-weight:600">{f'{pm:.1f}%' if pm else '—'}</div></div>
+                </div>
+                <div style="margin-top:6px;font-size:0.72rem;color:#64748b">下次财报：<b style="color:#e2e8f0">{earn or '—'}</b></div>
+                {warn_html}
+            </div>""", unsafe_allow_html=True)
+
         st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
 
 
