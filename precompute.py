@@ -22,6 +22,7 @@ def safe_filename(ticker: str) -> str:
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
+    failed = []
 
     for ticker in TICKERS:
         print(f"\n{'='*50}")
@@ -29,7 +30,12 @@ def main():
         print(f"{'='*50}")
 
         print(f"  [1/4] 拉取数据...")
-        df = fetch_data(ticker, force_refresh=True)
+        try:
+            df = fetch_data(ticker, force_refresh=True)
+        except Exception as e:
+            print(f"        ⚠️ 拉取失败，跳过（保留旧结果）：{e}")
+            failed.append(ticker)
+            continue
         print(f"        数据量：{len(df)} bars  ({str(df.index[0])[:10]} → {str(df.index[-1])[:10]})")
 
         is_growth = ticker in GROWTH_STRATEGY
@@ -112,7 +118,7 @@ def main():
     with open(ts_path, "w") as f:
         f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-    print(f"\n✅ 全部完成！")
+    print(f"\n✅ 完成！失败跳过：{failed or '无'}")
 
 
 if __name__ == "__main__":

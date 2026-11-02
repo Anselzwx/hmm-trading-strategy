@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-11-02T10:33:27.340406",
+  "generated_at": "2026-11-02T11:31:45.812983",
   "signals": {
     "GC=F": {
       "ticker": "GC=F",
       "date": "2026-11-02",
-      "close": 3919.9,
+      "close": 3915.2,
       "state": 2,
       "regime": "Bull Run",
       "is_bull": true,
@@ -30,7 +30,7 @@
         "above_ema200": false,
         "macd_ok": false,
         "above_bb_mid": false,
-        "stoch_ok": true,
+        "stoch_ok": false,
         "williams_ok": true,
         "cci_ok": false,
         "obv_ok": false,
@@ -47,7 +47,7 @@
     "SI=F": {
       "ticker": "SI=F",
       "date": "2026-11-02",
-      "close": 50.04,
+      "close": 50.11,
       "state": 0,
       "regime": "Bull Run",
       "is_bull": true,
@@ -474,12 +474,12 @@
     }
   },
   "errors": {
-    "CL=F": "402 Client Error: Payment Required for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=CLUSD&from=2008-01-01&to=2026-11-02&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
-    "FXI": "402 Client Error: Payment Required for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=FXI&from=2008-01-01&to=2026-11-02&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
-    "GOOG": "402 Client Error: Payment Required for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=GOOG&from=2008-01-01&to=2026-11-02&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
-    "SOXL": "402 Client Error: Payment Required for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SOXL&from=2008-01-01&to=2026-11-02&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
-    "MU": "402 Client Error: Payment Required for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=MU&from=2008-01-01&to=2026-11-02&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
-    "MRVL": "402 Client Error: Payment Required for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=MRVL&from=2008-01-01&to=2026-11-02&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
-    "ORCL": "402 Client Error: Payment Required for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=ORCL&from=2008-01-01&to=2026-11-02&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p"
+    "CL=F": "yfinance \u672a\u8fd4\u56de CL=F \u6570\u636e",
+    "FXI": "yfinance \u672a\u8fd4\u56de FXI \u6570\u636e",
+    "GOOG": "yfinance \u672a\u8fd4\u56de GOOG \u6570\u636e",
+    "SOXL": "yfinance \u672a\u8fd4\u56de SOXL \u6570\u636e",
+    "MU": "yfinance \u672a\u8fd4\u56de MU \u6570\u636e",
+    "MRVL": "yfinance \u672a\u8fd4\u56de MRVL \u6570\u636e",
+    "ORCL": "yfinance \u672a\u8fd4\u56de ORCL \u6570\u636e"
   }
 }
