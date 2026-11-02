@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-09-16T17:51:50.373112",
+  "generated_at": "2026-09-16T19:28:21.045534",
   "signals": {
     "GC=F": {
       "ticker": "GC=F",
       "date": "2026-09-16",
-      "close": 4371.2,
+      "close": 4389.9,
       "state": 1,
       "regime": "Bull Run",
       "is_bull": true,
       "is_bear": false,
-      "signal_score": 2,
+      "signal_score": 3,
       "min_conf": 3,
-      "adx": 29.33,
+      "adx": 28.7,
       "adx_entry": 20,
       "bull_prob": 1.0,
       "bear_prob": 0.0,
-      "action_if_flat": "WATCH",
+      "action_if_flat": "ENTER",
       "action_if_long": "HOLD",
       "stop_pct": -0.08,
       "vt_scale": null,
@@ -26,8 +26,8 @@
         "vol_ok": false,
         "volume_ok": false,
         "adx_ok": true,
-        "above_ema50": false,
-        "above_ema200": false,
+        "above_ema50": true,
+        "above_ema200": true,
         "macd_ok": false,
         "above_bb_mid": false,
         "stoch_ok": true,
@@ -47,7 +47,7 @@
     "SI=F": {
       "ticker": "SI=F",
       "date": "2026-09-16",
-      "close": 64.925,
+      "close": 65.17,
       "state": 1,
       "regime": "Bull Run",
       "is_bull": true,
@@ -69,7 +69,7 @@
         "vol_ok": false,
         "volume_ok": false,
         "adx_ok": false,
-        "above_ema50": false,
+        "above_ema50": true,
         "above_ema200": false,
         "macd_ok": false,
         "above_bb_mid": false,
@@ -90,16 +90,16 @@
     "CL=F": {
       "ticker": "CL=F",
       "date": "2026-09-16",
-      "close": 104.51,
-      "state": 2,
-      "regime": "Bull Run",
+      "close": 103.64,
+      "state": 1,
+      "regime": "Warming Up",
       "is_bull": false,
       "is_bear": false,
       "signal_score": 4,
       "min_conf": 3,
       "adx": 60.23,
       "adx_entry": 20,
-      "bull_prob": 0.0,
+      "bull_prob": 1.0,
       "bear_prob": 0.0,
       "action_if_flat": "STAY_OUT",
       "action_if_long": "HOLD",
@@ -125,8 +125,8 @@
       "posterior": [
         0.0,
         0.0,
-        0.0,
         1.0,
+        0.0,
         0.0
       ]
     },
@@ -251,7 +251,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "\u4ef7\u683c > EMA200"
+      "growth_strategy": "\u4ef7\u683c > EMA200",
+      "fundamentals": {
+        "rev_growth": 16.4,
+        "ps": 10.36,
+        "pe": 38.17,
+        "profit_margin": 27.6,
+        "next_earnings": "2026-10-30",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "NVDA": {
       "ticker": "NVDA",
@@ -288,7 +300,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >80%"
+      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >80%",
+      "fundamentals": {
+        "rev_growth": 105.9,
+        "ps": 16.91,
+        "pe": 26.65,
+        "profit_margin": 63.7,
+        "next_earnings": "2026-11-18",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "META": {
       "ticker": "META",
@@ -325,7 +349,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "EMA21>EMA50\uff08\u5165\u573a:RSI>58\u4e14\u4f4e\u6ce2\u52a8\uff09"
+      "growth_strategy": "EMA21>EMA50\uff08\u5165\u573a:RSI>58\u4e14\u4f4e\u6ce2\u52a8\uff09",
+      "fundamentals": {
+        "rev_growth": 28.0,
+        "ps": 7.48,
+        "pe": 25.07,
+        "profit_margin": 29.8,
+        "next_earnings": "2026-10-29",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "AMZN": {
       "ticker": "AMZN",
@@ -362,7 +398,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >70%"
+      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >70%",
+      "fundamentals": {
+        "rev_growth": 19.6,
+        "ps": 3.45,
+        "pe": 20.41,
+        "profit_margin": 17.4,
+        "next_earnings": "2026-10-30",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "GOOG": {
       "ticker": "GOOG",
@@ -399,7 +447,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >80%"
+      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >80%",
+      "fundamentals": {
+        "rev_growth": 24.2,
+        "ps": 9.37,
+        "pe": 17.36,
+        "profit_margin": 54.8,
+        "next_earnings": "2026-10-29",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "MSFT": {
       "ticker": "MSFT",
@@ -436,7 +496,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "\u4ef7\u683c>EMA200 \u4e14 RSI 30-65"
+      "growth_strategy": "\u4ef7\u683c>EMA200 \u4e14 RSI 30-65",
+      "fundamentals": {
+        "rev_growth": 17.7,
+        "ps": 11.12,
+        "pe": 28.17,
+        "profit_margin": 40.3,
+        "next_earnings": "2026-10-29",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "TSLA": {
       "ticker": "TSLA",
@@ -473,7 +545,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "EMA7 > EMA21"
+      "growth_strategy": "EMA7 > EMA21",
+      "fundamentals": {
+        "rev_growth": 25.5,
+        "ps": 13.59,
+        "pe": 333.25,
+        "profit_margin": 3.7,
+        "next_earnings": "2026-10-22",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 2,
+        "warnings": []
+      }
     },
     "HOOD": {
       "ticker": "HOOD",
@@ -510,7 +594,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >75%"
+      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >75%",
+      "fundamentals": {
+        "rev_growth": 32.3,
+        "ps": 20.13,
+        "pe": 50.43,
+        "profit_margin": 42.0,
+        "next_earnings": "2026-11-05",
+        "earnings_warning": false,
+        "valuation_risk": "medium",
+        "rev_ok": true,
+        "fa_score": 2,
+        "warnings": []
+      }
     },
     "PLTR": {
       "ticker": "PLTR",
@@ -547,7 +643,21 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "\u4ef7\u683c > EMA200"
+      "growth_strategy": "\u4ef7\u683c > EMA200",
+      "fundamentals": {
+        "rev_growth": 92.8,
+        "ps": 67.36,
+        "pe": 147.49,
+        "profit_margin": 49.0,
+        "next_earnings": "2026-11-03",
+        "earnings_warning": false,
+        "valuation_risk": "high",
+        "rev_ok": true,
+        "fa_score": 2,
+        "warnings": [
+          "\u26a0\ufe0f \u4f30\u503c\u504f\u9ad8 PS=67.4x"
+        ]
+      }
     },
     "SOXL": {
       "ticker": "SOXL",
@@ -584,7 +694,21 @@
         "drawdown_ok": false
       },
       "posterior": [],
-      "growth_strategy": "EMA21 > EMA50"
+      "growth_strategy": "EMA21 > EMA50",
+      "fundamentals": {
+        "rev_growth": null,
+        "ps": null,
+        "pe": 34.06,
+        "profit_margin": null,
+        "next_earnings": null,
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": false,
+        "fa_score": 0,
+        "warnings": [
+          "\u26a0\ufe0f \u8425\u6536\u540c\u6bd4\u8d1f\u589e\u957f"
+        ]
+      }
     },
     "MU": {
       "ticker": "MU",
@@ -621,7 +745,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "EMA21>EMA50\uff08\u5165\u573a:\u91cf>20\u65e5\u5747\u91cf\uff09"
+      "growth_strategy": "EMA21>EMA50\uff08\u5165\u573a:\u91cf>20\u65e5\u5747\u91cf\uff09",
+      "fundamentals": {
+        "rev_growth": 345.7,
+        "ps": 11.6,
+        "pe": 20.88,
+        "profit_margin": 55.9,
+        "next_earnings": "2026-10-01",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "MRVL": {
       "ticker": "MRVL",
@@ -658,7 +794,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "EMA21 > EMA50"
+      "growth_strategy": "EMA21 > EMA50",
+      "fundamentals": {
+        "rev_growth": 36.5,
+        "ps": 21.08,
+        "pe": 72.45,
+        "profit_margin": 27.9,
+        "next_earnings": "2026-12-02",
+        "earnings_warning": false,
+        "valuation_risk": "medium",
+        "rev_ok": true,
+        "fa_score": 2,
+        "warnings": []
+      }
     },
     "AMD": {
       "ticker": "AMD",
@@ -695,7 +843,19 @@
         "drawdown_ok": true
       },
       "posterior": [],
-      "growth_strategy": "EMA10 > EMA30"
+      "growth_strategy": "EMA10 > EMA30",
+      "fundamentals": {
+        "rev_growth": 50.1,
+        "ps": 19.93,
+        "pe": 126.68,
+        "profit_margin": 15.6,
+        "next_earnings": "2026-11-04",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     },
     "ORCL": {
       "ticker": "ORCL",
@@ -732,7 +892,19 @@
         "drawdown_ok": false
       },
       "posterior": [],
-      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >80%"
+      "growth_strategy": "\u8fd152\u5468\u9ad8\u70b9 >80%",
+      "fundamentals": {
+        "rev_growth": 29.6,
+        "ps": 5.91,
+        "pe": 21.96,
+        "profit_margin": 26.4,
+        "next_earnings": "2026-12-11",
+        "earnings_warning": false,
+        "valuation_risk": "low",
+        "rev_ok": true,
+        "fa_score": 3,
+        "warnings": []
+      }
     }
   },
   "errors": {}

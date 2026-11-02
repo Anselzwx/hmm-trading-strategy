@@ -149,27 +149,47 @@ def load_macro() -> pd.DataFrame:
 # 下载
 # ---------------------------------------------------------------------------
 
+def _fetch_yfinance(ticker: str) -> pd.DataFrame:
+    """yfinance fallback，用于 FMP 不支持或限额的 ticker。"""
+    import yfinance as yf
+    yf_sym = {"GC=F": "GC=F", "SI=F": "SI=F", "CL=F": "CL=F"}.get(ticker, ticker)
+    df = yf.download(yf_sym, start=FMP_START, auto_adjust=True, progress=False)
+    if df.empty:
+        raise RuntimeError(f"yfinance 未返回 {ticker} 数据")
+    df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+    df.index = pd.to_datetime(df.index).tz_localize(None)
+    df.index.name = "Date"
+    # squeeze MultiIndex columns if present
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.dropna()
+    return df
+
+
 def _fetch_fmp(ticker: str) -> pd.DataFrame:
     symbol  = FMP_SYMBOL.get(ticker, ticker)
     end_str = datetime.now().strftime("%Y-%m-%d")
     url = (f"{FMP_BASE}?symbol={symbol}"
            f"&from={FMP_START}&to={end_str}&apikey={FMP_API_KEY}")
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    if not data:
-        raise RuntimeError(f"FMP 未返回 {symbol} 数据，请检查 API key 或 symbol。")
-
-    df = pd.DataFrame(data)
-    df = df.rename(columns={
-        "date": "Date", "open": "Open", "high": "High",
-        "low": "Low", "close": "Close", "volume": "Volume",
-    })
-    df["Date"] = pd.to_datetime(df["Date"])
-    df = df.set_index("Date").sort_index()
-    df = df[["Open", "High", "Low", "Close", "Volume"]]
-    df = df.dropna()
-    return df
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            raise RuntimeError("FMP 返回空数据")
+        df = pd.DataFrame(data)
+        df = df.rename(columns={
+            "date": "Date", "open": "Open", "high": "High",
+            "low": "Low", "close": "Close", "volume": "Volume",
+        })
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.set_index("Date").sort_index()
+        df = df[["Open", "High", "Low", "Close", "Volume"]]
+        df = df.dropna()
+        return df
+    except Exception:
+        # FMP 失败（402/无数据）→ 回退到 yfinance
+        return _fetch_yfinance(ticker)
 
 
 # ---------------------------------------------------------------------------

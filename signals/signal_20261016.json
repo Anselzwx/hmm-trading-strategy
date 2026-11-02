@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-10-16T01:00:24.246054",
+  "signals": {},
+  "errors": {
+    "GC=F": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=GCUSD&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "SI=F": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SIUSD&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "CL=F": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=CLUSD&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "SPY": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SPY&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "FXI": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=FXI&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "AAPL": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AAPL&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "NVDA": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=NVDA&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "META": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=META&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "AMZN": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AMZN&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "GOOG": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=GOOG&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "MSFT": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=MSFT&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "TSLA": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=TSLA&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "HOOD": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=HOOD&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "PLTR": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=PLTR&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "SOXL": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SOXL&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "MU": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=MU&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "MRVL": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=MRVL&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "AMD": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AMD&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p",
+    "ORCL": "429 Client Error: Too Many Requests for url: https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=ORCL&from=2008-01-01&to=2026-10-16&apikey=1aqqbJ9eixJ0cr8RGJd5LC9fXjdH5k1p"
+  }
+}
