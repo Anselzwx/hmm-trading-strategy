@@ -1139,21 +1139,8 @@ def render_asset(ticker: str) -> None:
             last = df.iloc[-1]
         cur_regime        = "N/A (非HMM)"
         cur_regime_filter = bool(last.get("Close", 0) > last.get("ema200", 0))
-        # 当前信号：依据 growth_strategy_type 实时判断
-        _gtype = res.get("growth_strategy_type", "ema200")
-        _c = last["Close"]
-        if _gtype == "ema200":
-            _sig_now = _c > last.get("ema200", 0)
-        elif _gtype == "ema21_50":
-            _sig_now = last.get("ema21", last.get("ema50", _c)) > last.get("ema50", 0) if "ema21" in last else _c > last.get("ema200", 0)
-        elif _gtype == "ema50_200":
-            _sig_now = last.get("ema50", _c) > last.get("ema200", 0)
-        elif _gtype in ("52wh80", "52wh75"):
-            _pct = 0.80 if _gtype == "52wh80" else 0.75
-            _h52 = df["Close"].rolling(252, min_periods=50).max().iloc[-1]
-            _sig_now = _c > _h52 * _pct
-        else:
-            _sig_now = True  # buyhold
+        # 当前信号 = 回测里策略此刻是否持仓（与 K 线买卖点一致，含止损/入场门控）
+        _sig_now = any(t.get("exit_reason") == "持仓中" for t in res.get("trades", []))
         cur_signal = "LONG" if _sig_now else "CASH"
         n_states = 0; min_conf = 0; bull_top = 0; stop = -0.20; adx_thresh = 20
         posterior = []
@@ -1208,10 +1195,19 @@ def render_asset(ticker: str) -> None:
     with b1:
         sc = "signal-long" if cur_signal == "LONG" else "signal-cash"
         sv = "#00e676" if cur_signal == "LONG" else "#64748b"
+        _open_t = next((t for t in res.get("trades", []) if t.get("exit_reason") == "持仓中"), None)
+        _closed = [t for t in res.get("trades", []) if t.get("exit_reason") != "持仓中"]
+        if _open_t is not None:
+            _pos_txt = f"持仓自 {pd.Timestamp(_open_t['entry_time']).date()} · 成本 ${_open_t['entry_price']:,.2f}"
+        elif _closed:
+            _pos_txt = f"上次卖出 {pd.Timestamp(_closed[-1]['exit_time']).date()}（{_closed[-1]['exit_reason']}）"
+        else:
+            _pos_txt = ""
         st.markdown(f"""<div class="{sc}">
             <div class="signal-title">当前信号</div>
             <div class="signal-value" style="color:{sv}">{cur_signal}</div>
             <div style="margin-top:8px;font-size:0.78rem;color:#475569">价格 ${last['Close']:,.2f}</div>
+            <div style="margin-top:4px;font-size:0.72rem;color:#64748b">{_pos_txt}</div>
         </div>""", unsafe_allow_html=True)
 
     with b2:
