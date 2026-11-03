@@ -149,47 +149,127 @@ def load_macro() -> pd.DataFrame:
 # 下载
 # ---------------------------------------------------------------------------
 
-def _fetch_yfinance(ticker: str) -> pd.DataFrame:
-    """yfinance fallback，用于 FMP 不支持或限额的 ticker。"""
-    import yfinance as yf
-    yf_sym = {"GC=F": "GC=F", "SI=F": "SI=F", "CL=F": "CL=F"}.get(ticker, ticker)
-    df = yf.download(yf_sym, start=FMP_START, auto_adjust=True, progress=False)
-    if df.empty:
-        raise RuntimeError(f"yfinance 未返回 {ticker} 数据")
-    df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
-    df.index = pd.to_datetime(df.index).tz_localize(None)
-    df.index.name = "Date"
-    # squeeze MultiIndex columns if present
+OHLCV    = ["Open", "High", "Low", "Close", "Volume"]
+RAW_DIR  = os.path.join(CACHE_DIR, ".raw")
+YF_SYMBOL = {"DXUSD": "DX-Y.NYB"}
+_RECENT: dict = {}   # prefetch_recent() 批量拉到的近期行情
+
+
+def _safe(ticker: str) -> str:
+    return ticker.replace("=", "_").replace("/", "_")
+
+
+def _clean_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-    df = df.dropna()
-    return df
+    df = df[OHLCV].copy()
+    df.index = pd.to_datetime(df.index).tz_localize(None)
+    df.index.name = "Date"
+    return df.dropna().sort_index()
 
 
-def _fetch_fmp(ticker: str) -> pd.DataFrame:
-    symbol  = FMP_SYMBOL.get(ticker, ticker)
-    end_str = datetime.now().strftime("%Y-%m-%d")
-    url = (f"{FMP_BASE}?symbol={symbol}"
-           f"&from={FMP_START}&to={end_str}&apikey={FMP_API_KEY}")
+def _raw_path(ticker: str) -> str:
+    return os.path.join(RAW_DIR, f"{_safe(ticker)}.pkl")
+
+
+def _base_raw(ticker: str):
+    """本地已有的历史 OHLCV（原始库 / 特征缓存 / 回测结果中取最新最长的一份）。"""
+    best = None
+    for p in (_raw_path(ticker), _cache_path(ticker),
+              os.path.join(CACHE_DIR, "results", f"{_safe(ticker)}.pkl")):
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, "rb") as f:
+                obj = pickle.load(f)
+            df = obj["df"] if isinstance(obj, dict) else obj
+            if not set(OHLCV).issubset(df.columns) or df.empty:
+                continue
+            df = _clean_ohlcv(df)
+            if best is None or (df.index[-1], len(df)) > (best.index[-1], len(best)):
+                best = df
+        except Exception:
+            continue
+    return best
+
+
+def _fetch_fmp_range(ticker: str, start: str) -> pd.DataFrame:
+    symbol = FMP_SYMBOL.get(ticker, ticker)
+    url = (f"{FMP_BASE}?symbol={symbol}&from={start}"
+           f"&to={datetime.now().strftime('%Y-%m-%d')}&apikey={FMP_API_KEY}")
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    if not data:
+        raise RuntimeError(f"FMP 未返回 {ticker} 数据")
+    df = pd.DataFrame(data).rename(columns={
+        "date": "Date", "open": "Open", "high": "High",
+        "low": "Low", "close": "Close", "volume": "Volume",
+    })
+    return _clean_ohlcv(df.set_index("Date"))
+
+
+def _fetch_yf_range(ticker: str, start: str) -> pd.DataFrame:
+    import yfinance as yf
+    df = yf.download(YF_SYMBOL.get(ticker, ticker), start=start,
+                     auto_adjust=False, progress=False)
+    if df.empty:
+        raise RuntimeError(f"yfinance 未返回 {ticker} 数据")
+    return _clean_ohlcv(df)
+
+
+def _fetch_range(ticker: str, start: str) -> pd.DataFrame:
     try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            raise RuntimeError("FMP 返回空数据")
-        df = pd.DataFrame(data)
-        df = df.rename(columns={
-            "date": "Date", "open": "Open", "high": "High",
-            "low": "Low", "close": "Close", "volume": "Volume",
-        })
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.set_index("Date").sort_index()
-        df = df[["Open", "High", "Low", "Close", "Volume"]]
-        df = df.dropna()
-        return df
+        return _fetch_fmp_range(ticker, start)
     except Exception:
-        # FMP 失败（402/无数据）→ 回退到 yfinance
-        return _fetch_yfinance(ticker)
+        return _fetch_yf_range(ticker, start)
+
+
+def prefetch_recent(tickers) -> None:
+    """一次批量请求，拉所有标的自本地最后一天以来的行情，供 _fetch_prices 增量拼接。"""
+    import yfinance as yf
+    lasts = [b.index[-1] for b in map(_base_raw, tickers) if b is not None]
+    if not lasts:
+        return
+    start = (min(lasts) - timedelta(days=7)).strftime("%Y-%m-%d")
+    syms = {t: YF_SYMBOL.get(t, t) for t in tickers}
+    try:
+        raw = yf.download(list(syms.values()), start=start, auto_adjust=False,
+                          progress=False, group_by="ticker", threads=False)
+    except Exception:
+        return
+    for t, s in syms.items():
+        try:
+            sub = _clean_ohlcv(raw[s])
+            if not sub.empty:
+                _RECENT[t] = sub
+        except Exception:
+            pass
+
+
+def _fetch_prices(ticker: str) -> pd.DataFrame:
+    """本地有历史数据时只补最近几天；没有或太旧才拉全量。"""
+    raw_p = _raw_path(ticker)
+    if os.path.exists(raw_p) and datetime.now() - datetime.fromtimestamp(os.path.getmtime(raw_p)) < timedelta(hours=6):
+        with open(raw_p, "rb") as f:
+            return pickle.load(f)
+    base = _base_raw(ticker)
+    df = None
+    if base is not None and (datetime.now() - base.index[-1]).days <= 120:
+        recent = _RECENT.get(ticker)
+        if recent is None or recent.index[0] > base.index[-1]:
+            recent = _fetch_range(ticker, (base.index[-1] - timedelta(days=7)).strftime("%Y-%m-%d"))
+        overlap = base.index.intersection(recent.index)
+        # 重叠日价格差 >5% 说明拆股或复权口径变了，增量拼接不可靠
+        if len(overlap) == 0 or abs(recent.loc[overlap[-1], "Close"] / base.loc[overlap[-1], "Close"] - 1) <= 0.05:
+            df = pd.concat([base, recent])
+            df = df[~df.index.duplicated(keep="last")].sort_index()
+    if df is None:
+        df = _fetch_range(ticker, FMP_START)
+    os.makedirs(RAW_DIR, exist_ok=True)
+    with open(_raw_path(ticker), "wb") as f:
+        pickle.dump(df, f)
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -239,12 +319,17 @@ def earnings_blackout_mask(index: pd.DatetimeIndex,
 # 公开 API
 # ---------------------------------------------------------------------------
 
+_MKT_CACHE: dict = {}
+
+
 def _load_market_features() -> pd.DataFrame:
-    """加载 VIX（VIXY）和美元指数（DXUSD）作为市场特征。"""
+    """加载 VIX（VIXY）和美元指数（DXUSD）作为市场特征；同一进程内只拉一次。"""
+    if "mkt" in _MKT_CACHE:
+        return _MKT_CACHE["mkt"].copy()
     frames = {}
     for sym, col in [("VIXY", "vix_ret"), ("DXUSD", "dxy_ret")]:
         try:
-            raw = _fetch_fmp(sym)
+            raw = _fetch_prices(sym)
             ret = np.log(raw["Close"] / raw["Close"].shift(1)) * 100
             frames[col] = ret
         except Exception:
@@ -258,7 +343,8 @@ def _load_market_features() -> pd.DataFrame:
         mu, sigma = mkt[col].mean(), mkt[col].std()
         if sigma > 0:
             mkt[col] = (mkt[col] - mu) / sigma
-    return mkt
+    _MKT_CACHE["mkt"] = mkt
+    return mkt.copy()
 
 
 def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFrame:
@@ -273,7 +359,7 @@ def fetch_data(ticker: str = "AAPL", force_refresh: bool = False) -> pd.DataFram
     if not force_refresh and _cache_is_fresh(ticker):
         return _load_cache(ticker)
 
-    df = _fetch_fmp(ticker)
+    df = _fetch_prices(ticker)
 
     # 价格特征
     df["returns"]       = np.log(df["Close"] / df["Close"].shift(1)) * 100

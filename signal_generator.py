@@ -29,7 +29,7 @@ from backtester import (
     compute_indicators, compute_signals, get_hmm_features,
     _walk_forward_states,
 )
-from data_loader import fetch_data, DAILY_TICKERS
+from data_loader import fetch_data, prefetch_recent, DAILY_TICKERS
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "signals")
 
@@ -378,6 +378,7 @@ def run():
     HMM_TICKERS    = ["GC=F","SI=F","CL=F","SPY","FXI"]
     GROWTH_TICKERS = ["AAPL","NVDA","META","AMZN","GOOG","MSFT","TSLA","HOOD","PLTR","SOXL","MU","MRVL","AMD","ORCL"]
     tickers = HMM_TICKERS + GROWTH_TICKERS
+    prefetch_recent(tickers + ["VIXY", "DXUSD"])
     signals = {}
     errors  = {}
 

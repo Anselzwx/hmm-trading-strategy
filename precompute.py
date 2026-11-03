@@ -5,7 +5,7 @@ from datetime import datetime
 
 warnings.filterwarnings("ignore")
 
-from data_loader    import fetch_data
+from data_loader    import fetch_data, prefetch_recent
 from backtester     import run_backtest
 from backtester_v2  import run_backtest_v2
 from strategy_c     import run_strategy_c
@@ -23,6 +23,7 @@ def safe_filename(ticker: str) -> str:
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     failed = []
+    prefetch_recent(TICKERS + ["VIXY", "DXUSD"])
 
     for ticker in TICKERS:
         print(f"\n{'='*50}")
