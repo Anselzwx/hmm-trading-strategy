@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-11-04T01:05:15.148300",
+  "signals": {},
+  "errors": {
+    "GC=F": "yfinance \u672a\u8fd4\u56de GC=F \u6570\u636e",
+    "SI=F": "yfinance \u672a\u8fd4\u56de SI=F \u6570\u636e",
+    "CL=F": "yfinance \u672a\u8fd4\u56de CL=F \u6570\u636e",
+    "SPY": "yfinance \u672a\u8fd4\u56de SPY \u6570\u636e",
+    "FXI": "yfinance \u672a\u8fd4\u56de FXI \u6570\u636e",
+    "AAPL": "yfinance \u672a\u8fd4\u56de AAPL \u6570\u636e",
+    "NVDA": "yfinance \u672a\u8fd4\u56de NVDA \u6570\u636e",
+    "META": "yfinance \u672a\u8fd4\u56de META \u6570\u636e",
+    "AMZN": "yfinance \u672a\u8fd4\u56de AMZN \u6570\u636e",
+    "GOOG": "yfinance \u672a\u8fd4\u56de GOOG \u6570\u636e",
+    "MSFT": "yfinance \u672a\u8fd4\u56de MSFT \u6570\u636e",
+    "TSLA": "yfinance \u672a\u8fd4\u56de TSLA \u6570\u636e",
+    "HOOD": "yfinance \u672a\u8fd4\u56de HOOD \u6570\u636e",
+    "PLTR": "yfinance \u672a\u8fd4\u56de PLTR \u6570\u636e",
+    "SOXL": "yfinance \u672a\u8fd4\u56de SOXL \u6570\u636e",
+    "MU": "yfinance \u672a\u8fd4\u56de MU \u6570\u636e",
+    "MRVL": "yfinance \u672a\u8fd4\u56de MRVL \u6570\u636e",
+    "AMD": "yfinance \u672a\u8fd4\u56de AMD \u6570\u636e",
+    "ORCL": "yfinance \u672a\u8fd4\u56de ORCL \u6570\u636e"
+  }
+}
