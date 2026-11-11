@@ -218,11 +218,42 @@ def _fetch_yf_range(ticker: str, start: str) -> pd.DataFrame:
     return _clean_ohlcv(df)
 
 
+_MASSIVE_ENV = os.path.expanduser("~/.massive_env")
+_MASSIVE_LAST = [0.0]
+
+
+def _fetch_massive_range(ticker: str, start: str) -> pd.DataFrame:
+    """Massive(Polygon) 免费档：仅股票/ETF，约 2 年历史，5 次/分钟。"""
+    import time
+    if "=" in ticker or not os.path.exists(_MASSIVE_ENV):
+        raise RuntimeError(f"Massive 不支持 {ticker}")
+    if (datetime.now() - pd.Timestamp(start)).days > 700:
+        raise RuntimeError("Massive 免费档历史不足")
+    with open(_MASSIVE_ENV) as f:
+        key = dict(l.strip().split("=", 1) for l in f if "=" in l)["MASSIVE_API_KEY"]
+    wait = _MASSIVE_LAST[0] + 12.5 - time.time()
+    if wait > 0:
+        time.sleep(wait)
+    _MASSIVE_LAST[0] = time.time()
+    url = (f"https://api.massive.com/v2/aggs/ticker/{ticker}/range/1/day/"
+           f"{start}/{datetime.now().strftime('%Y-%m-%d')}")
+    resp = requests.get(url, params={"adjusted": "true", "sort": "asc", "limit": 50000, "apiKey": key}, timeout=30)
+    resp.raise_for_status()
+    rows = resp.json().get("results") or []
+    if not rows:
+        raise RuntimeError(f"Massive 未返回 {ticker} 数据")
+    df = pd.DataFrame(rows).rename(columns={"o": "Open", "h": "High", "l": "Low", "c": "Close", "v": "Volume"})
+    df.index = pd.to_datetime(df["t"], unit="ms", utc=True).dt.tz_convert("America/New_York").dt.normalize().dt.tz_localize(None)
+    return _clean_ohlcv(df)
+
+
 def _fetch_range(ticker: str, start: str) -> pd.DataFrame:
-    try:
-        return _fetch_fmp_range(ticker, start)
-    except Exception:
-        return _fetch_yf_range(ticker, start)
+    for fn in (_fetch_fmp_range, _fetch_yf_range):
+        try:
+            return fn(ticker, start)
+        except Exception:
+            pass
+    return _fetch_massive_range(ticker, start)
 
 
 def prefetch_recent(tickers) -> None:
@@ -260,8 +291,8 @@ def _fetch_prices(ticker: str) -> pd.DataFrame:
         if recent is None or recent.index[0] > base.index[-1]:
             recent = _fetch_range(ticker, (base.index[-1] - timedelta(days=7)).strftime("%Y-%m-%d"))
         overlap = base.index.intersection(recent.index)
-        # 重叠日价格差 >5% 说明拆股或复权口径变了，增量拼接不可靠
-        if len(overlap) == 0 or abs(recent.loc[overlap[-1], "Close"] / base.loc[overlap[-1], "Close"] - 1) <= 0.05:
+        # 最早重叠日（必为完整收盘）价格差 >5% 说明拆股或复权口径变了，增量拼接不可靠
+        if len(overlap) == 0 or abs(recent.loc[overlap[0], "Close"] / base.loc[overlap[0], "Close"] - 1) <= 0.05:
             df = pd.concat([base, recent])
             df = df[~df.index.duplicated(keep="last")].sort_index()
     if df is None:
