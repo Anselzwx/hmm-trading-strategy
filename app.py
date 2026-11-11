@@ -2093,6 +2093,104 @@ def render_signals_tab() -> None:
 
 
 # ──────────────────────────────────────────────────────────────
+# 波段面板（连跌3天买回调）
+# ──────────────────────────────────────────────────────────────
+
+
+def render_swing_tab() -> None:
+    res = _load_result("SWING")
+    sig = (_load_latest_signal() or {}).get("swing") or (res or {}).get("current")
+    if res is None and sig is None:
+        st.warning("无波段数据，请先运行 precompute.py")
+        return
+
+    st.markdown("""<div class="glass-card" style="padding:14px 18px;font-size:0.78rem;color:#94a3b8;line-height:1.7">
+        <b style="color:#e2e8f0">规则</b> &nbsp;·&nbsp;
+        <b>买</b>：收盘 &gt; SMA200 且连续 3 天收跌 → 次日开盘买 &nbsp;·&nbsp;
+        <b>卖</b>：收盘 &gt; 前一日最高价，或持仓满 5 天 → 次日开盘卖 &nbsp;·&nbsp;
+        5 槽位 × 20% 资金，单边成本 5bp，不设硬止损
+    </div>""", unsafe_allow_html=True)
+
+    # ── 今日信号 ───────────────────────────────────────────
+    if sig:
+        sigs = sig["signals"]
+        st.markdown(f'<div class="section-header">⚡ 今日波段信号 &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">'
+                    f'空余槽位 {sig["open_slots"]}/5</span></div>', unsafe_allow_html=True)
+        _C = {"ENTER": "#00c864", "HOLD": "#60a5fa", "EXIT": "#ff5252", "WATCH": "#d97706", "STAY_OUT": "#475569"}
+        order = sorted(sigs, key=lambda t: ["EXIT", "ENTER", "HOLD", "WATCH", "STAY_OUT"].index(sigs[t]["action"]))
+        for row in range(0, len(order), 8):
+            cols = st.columns(8, gap="small")
+            for i, t in enumerate(order[row:row + 8]):
+                v = sigs[t]
+                dc = "#00c864" if v["above_sma200"] else "#ff5252"
+                extra = ""
+                if v["entry_price"]:
+                    rc = "#00c864" if v["pos_ret_pct"] >= 0 else "#ff5252"
+                    extra = (f'<div style="font-size:0.58rem;color:{rc};margin-top:2px">持仓 {v["pos_ret_pct"]:+.1f}% · {v["days_held"]}天</div>'
+                             f'<div style="font-size:0.55rem;color:#64748b">卖出线 收盘&gt;${v["exit_trigger"]:,.2f}</div>')
+                with cols[i]:
+                    st.markdown(
+                        f'<div class="metric-card" style="padding:10px 8px">'
+                        f'<div style="font-size:0.65rem;color:#475569;margin-bottom:4px">{t} · {v["date"][5:]}</div>'
+                        f'<div style="font-size:0.9rem;font-weight:800;color:{_C.get(v["action"], "#94a3b8")}">{v["action"]}</div>'
+                        f'<div style="font-size:0.6rem;color:#94a3b8;margin-top:2px">连跌 {v["ndown"]} 天</div>'
+                        f'<div style="font-size:0.58rem;color:{dc}">SMA200 {v["dist_sma200_pct"]:+.1f}%</div>'
+                        f'{extra}</div>', unsafe_allow_html=True)
+        st.caption("ENTER = 今日收盘触发，明日开盘买 · WATCH = 已连跌 2 天（明日再跌即触发）或槽位已满 · "
+                   "EXIT = 离场条件已满足，明日开盘卖")
+
+    if res is None:
+        return
+
+    # ── 回测 ───────────────────────────────────────────────
+    m = res["metrics"]
+    st.markdown('<div class="section-header">📈 回测（2010 至今，16 标的）</div>', unsafe_allow_html=True)
+    cs = st.columns(6, gap="small")
+    for c, (lb, val, sub, col) in zip(cs, [
+        ("年化", f'{m["cagr_pct"]:.1f}%', f'总收益 {m["total_return_pct"]:,.0f}%', "green"),
+        ("夏普", f'{m["sharpe"]:.2f}', "日频年化", "green" if m["sharpe"] >= 1 else "white"),
+        ("最大回撤", f'{m["max_drawdown_pct"]:.1f}%', "逐日盯市", "red"),
+        ("胜率", f'{m["win_rate"]:.1f}%', f'均 {m["avg_trade_pct"]:+.2f}%/笔', "white"),
+        ("交易数", f'{m["n_trades"]:,}', "", "white"),
+        ("持仓时间占比", f'{m["exposure_pct"]:.0f}%', "有仓位的天数", "white"),
+    ]):
+        c.markdown(_metric(lb, val, sub, col), unsafe_allow_html=True)
+
+    eq = res["equity"]
+    spy = _load_result("SPY")
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
+    fig.add_trace(go.Scatter(x=eq.index, y=eq.values, name="波段策略", line=dict(color="#ffd740", width=2)), row=1, col=1)
+    if spy is not None:
+        sc = spy["df"]["Close"].reindex(eq.index, method="ffill").dropna()
+        fig.add_trace(go.Scatter(x=sc.index, y=sc / sc.iloc[0], name="SPY 买入持有",
+                                 line=dict(color="#64748b", width=1.2, dash="dot")), row=1, col=1)
+    dd = (eq / eq.cummax() - 1) * 100
+    fig.add_trace(go.Scatter(x=dd.index, y=dd.values, name="回撤 %", fill="tozeroy",
+                             line=dict(color="#ff5252", width=1)), row=2, col=1)
+    fig.update_layout(**_base_layout(height=460, title="净值（对数）"))
+    fig.update_yaxes(type="log", row=1, col=1, gridcolor=_gc())
+    fig.update_yaxes(gridcolor=_gc(), row=2, col=1)
+    fig.update_xaxes(gridcolor=_gc())
+    st.plotly_chart(fig, use_container_width=True)
+
+    c1, c2 = st.columns([1, 1.4], gap="medium")
+    with c1:
+        st.markdown('<div class="section-header">分段检验</div>', unsafe_allow_html=True)
+        seg = pd.DataFrame(res["segments"])[["period", "cagr_pct", "sharpe", "max_drawdown_pct", "win_rate", "n_trades"]]
+        seg.columns = ["区间", "年化%", "夏普", "最大回撤%", "胜率%", "交易数"]
+        st.dataframe(seg.round(2), hide_index=True, use_container_width=True)
+    with c2:
+        st.markdown('<div class="section-header">最近 20 笔交易</div>', unsafe_allow_html=True)
+        tr = pd.DataFrame(res["trades"][-20:][::-1])
+        tr["entry_date"] = pd.to_datetime(tr["entry_date"]).dt.strftime("%Y-%m-%d")
+        tr["exit_date"] = tr["exit_date"].apply(lambda x: "—" if x is None or pd.isna(x) else pd.Timestamp(x).strftime("%Y-%m-%d"))
+        tr["ret"] = tr["ret"].apply(lambda x: "—" if x is None or pd.isna(x) else f"{x * 100:+.2f}%")
+        tr = tr[["ticker", "entry_date", "entry_price", "exit_date", "ret", "days", "exit_reason"]]
+        tr.columns = ["标的", "买入日", "买入价", "卖出日", "收益", "天数", "离场原因"]
+        st.dataframe(tr.round(2), hide_index=True, use_container_width=True, height=380)
+
+
+# ──────────────────────────────────────────────────────────────
 # 组合面板
 # ──────────────────────────────────────────────────────────────
 
@@ -2377,7 +2475,7 @@ def main() -> None:
     ]
     NAV_TICKER = {label: tick for label, tick in _TICKER_MAP_BASE}
 
-    NAV_OPTIONS = ["📡  今日信号", "🌐  组合"] + [label for label, _ in _TICKER_MAP_BASE]
+    NAV_OPTIONS = ["📡  今日信号", "🔄  波段", "🌐  组合"] + [label for label, _ in _TICKER_MAP_BASE]
 
     # key includes option count so adding tickers forces a fresh widget
     _nav_key = f"_nav_radio_{len(NAV_OPTIONS)}"
@@ -2405,6 +2503,8 @@ def main() -> None:
 
     if _active == "📡  今日信号":
         render_signals_tab()
+    elif _active == "🔄  波段":
+        render_swing_tab()
     elif _active == "🌐  组合":
         render_portfolio_tab()
     elif _active in NAV_TICKER:

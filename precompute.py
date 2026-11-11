@@ -11,6 +11,7 @@ from backtester_v2  import run_backtest_v2
 from strategy_c     import run_strategy_c
 from strategy_d     import run_strategy_d
 from strategy_growth import run_strategy_growth, GROWTH_STRATEGY, STRATEGY_LABELS
+from strategy_swing  import run_swing, SWING_TICKERS
 
 TICKERS = ["AAPL", "GC=F", "SI=F", "CL=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR", "SOXL", "MU", "MRVL", "AMD", "ORCL"]
 OUT_DIR = os.path.join(os.path.dirname(__file__), "results")
@@ -23,6 +24,7 @@ def safe_filename(ticker: str) -> str:
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     failed = []
+    swing_dfs = {}
     prefetch_recent(TICKERS + ["VIXY", "DXUSD"])
 
     for ticker in TICKERS:
@@ -37,6 +39,8 @@ def main():
             print(f"        ⚠️ 拉取失败，跳过（保留旧结果）：{e}")
             failed.append(ticker)
             continue
+        if ticker in SWING_TICKERS:
+            swing_dfs[ticker] = df[["Open", "High", "Low", "Close"]]
         print(f"        数据量：{len(df)} bars  ({str(df.index[0])[:10]} → {str(df.index[-1])[:10]})")
 
         is_growth = ticker in GROWTH_STRATEGY
@@ -114,6 +118,17 @@ def main():
         with open(out_path, "wb") as f:
             pickle.dump(result, f)
         print(f"        已保存 → {out_path}")
+
+    print(f"\n  波段策略（连跌3天）...")
+    try:
+        res_s = run_swing(swing_dfs)
+        with open(os.path.join(OUT_DIR, "SWING.pkl"), "wb") as f:
+            pickle.dump(res_s, f)
+        ms = res_s["metrics"]
+        print(f"        CAGR：{ms['cagr_pct']:+.1f}%  夏普：{ms['sharpe']:.2f}  MaxDD：{ms['max_drawdown_pct']:.1f}%  交易：{ms['n_trades']}笔")
+    except Exception as e:
+        print(f"        ⚠️ 失败：{e}")
+        failed.append("SWING")
 
     ts_path = os.path.join(OUT_DIR, "computed_at.txt")
     with open(ts_path, "w") as f:

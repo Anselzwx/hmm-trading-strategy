@@ -29,7 +29,7 @@ from backtester import (
     compute_indicators, compute_signals, get_hmm_features,
     _walk_forward_states,
 )
-from data_loader import fetch_data, prefetch_recent, DAILY_TICKERS
+from data_loader import fetch_data, prefetch_recent, DAILY_TICKERS, _fetch_prices
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "signals")
 
@@ -391,9 +391,18 @@ def run():
         except Exception as e:
             errors[ticker] = str(e)
 
+    swing = None
+    try:
+        from strategy_swing import run_swing, SWING_TICKERS
+        res_s = run_swing({t: _fetch_prices(t) for t in SWING_TICKERS})
+        swing = {**res_s["current"], "metrics": res_s["metrics"]}
+    except Exception as e:
+        errors["SWING"] = str(e)
+
     output = {
         "generated_at": datetime.now().isoformat(),
         "signals":      signals,
+        "swing":        swing,
         "errors":       errors,
     }
 
@@ -426,6 +435,12 @@ def run():
             print(f"  Signal: {'✅ IN' if sig['is_bull'] else '❌ OUT'}")
         print(f"  Action if FLAT : {flag_flat} {action_flat}")
         print(f"  Action if LONG : {flag_long} {action_long}")
+
+    if swing:
+        print(f"\n  波段（连跌3天）空余槽位 {swing['open_slots']}/5")
+        for t, v in swing["signals"].items():
+            if v["action"] != "STAY_OUT":
+                print(f"    {t:6s} {v['action']:8s} 连跌{v['ndown']}天  距SMA200 {v['dist_sma200_pct']:+.1f}%  {v['note'] or ''}")
 
     if errors:
         print(f"\n  ERRORS: {errors}")
