@@ -29,7 +29,7 @@ from backtester import (
     compute_indicators, compute_signals, get_hmm_features,
     _walk_forward_states,
 )
-from data_loader import fetch_data, prefetch_recent, DAILY_TICKERS, _fetch_prices
+from data_loader import fetch_data, prefetch_recent, DAILY_TICKERS
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "signals")
 
@@ -393,8 +393,8 @@ def run():
 
     swing = None
     try:
-        from strategy_swing import run_swing, SWING_TICKERS
-        res_s = run_swing({t: _fetch_prices(t) for t in SWING_TICKERS})
+        from strategy_swing import run_swing, gather_dfs
+        res_s = run_swing(gather_dfs())
         swing = {**res_s["current"], "metrics": res_s["metrics"]}
     except Exception as e:
         errors["SWING"] = str(e)

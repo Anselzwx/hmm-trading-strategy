@@ -11,7 +11,7 @@ from backtester_v2  import run_backtest_v2
 from strategy_c     import run_strategy_c
 from strategy_d     import run_strategy_d
 from strategy_growth import run_strategy_growth, GROWTH_STRATEGY, STRATEGY_LABELS
-from strategy_swing  import run_swing, SWING_TICKERS
+from strategy_swing  import run_swing, gather_dfs, SWING_TICKERS
 
 TICKERS = ["AAPL", "GC=F", "SI=F", "CL=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD", "SPY", "FXI", "PLTR", "SOXL", "MU", "MRVL", "AMD", "ORCL"]
 OUT_DIR = os.path.join(os.path.dirname(__file__), "results")
@@ -121,7 +121,7 @@ def main():
 
     print(f"\n  波段策略（连跌3天）...")
     try:
-        res_s = run_swing(swing_dfs)
+        res_s = run_swing(gather_dfs(swing_dfs, fetch=False))
         with open(os.path.join(OUT_DIR, "SWING.pkl"), "wb") as f:
             pickle.dump(res_s, f)
         ms = res_s["metrics"]

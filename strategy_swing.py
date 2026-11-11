@@ -24,6 +24,25 @@ START    = "2010-01-01"
 SEGMENTS = [("2010", "2015"), ("2016", "2020"), ("2021", "2023"), ("2024", "2026")]
 
 
+def gather_dfs(fresh: Dict[str, pd.DataFrame] = None, fetch: bool = True) -> Dict[str, pd.DataFrame]:
+    """每个标的优先用 fresh / 联网拉取；失败则退回本地缓存，保证标的池完整"""
+    from data_loader import _fetch_prices, _base_raw
+    fresh = fresh or {}
+    out = {}
+    for t in SWING_TICKERS:
+        df = fresh.get(t)
+        if df is None and fetch:
+            try:
+                df = _fetch_prices(t)
+            except Exception:
+                df = None
+        if df is None:
+            df = _base_raw(t)
+        if df is not None:
+            out[t] = df
+    return out
+
+
 def completed_bars(df: pd.DataFrame) -> pd.DataFrame:
     """去掉美东当日未收盘的K线"""
     now_ny = pd.Timestamp.now(tz="America/New_York")
