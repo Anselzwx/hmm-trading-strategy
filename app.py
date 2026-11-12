@@ -1889,6 +1889,82 @@ def _action_badge(action: str) -> str:
             f'letter-spacing:.3px">{action}</span>')
 
 
+LIVE_TICKERS = ["AAPL", "GC=F", "SI=F", "CL=F", "NVDA", "META", "AMZN", "GOOG", "MSFT", "TSLA", "HOOD",
+                "SPY", "FXI", "PLTR", "SOXL", "MU", "MRVL", "AMD", "ORCL", "SOXS"]
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _live_quotes():
+    import live_quotes
+    try:
+        return live_quotes.fetch_quotes(LIVE_TICKERS), None
+    except Exception as e:
+        return {}, str(e)
+
+
+def render_live_panel(signals: dict, swing: dict) -> None:
+    """盘前/盘后/夜盘实时报价 + 对现有信号的影响提示（主信号仍按收盘价）"""
+    import live_quotes
+    quotes, err = _live_quotes()
+    ny = pd.Timestamp.now(tz="America/New_York")
+    sess = live_quotes.market_session()
+    st.markdown(f'<div class="section-header">🌙 盘前 / 盘后 / 夜盘实时 &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">'
+                f'当前时段：<b style="color:#e2e8f0">{sess}</b> · 美东 {ny.strftime("%m-%d %H:%M")} · 每 60 秒刷新</span></div>',
+                unsafe_allow_html=True)
+    if err or not quotes:
+        st.warning(f"实时报价获取失败：{err or '无数据'}")
+        return
+
+    def _c(v):
+        return "#00c864" if v >= 0 else "#ff5252"
+
+    fut = [("纳指期货", "NQ"), ("标普期货", "ES"), ("黄金", "GC=F"), ("白银", "SI=F"), ("原油", "CL=F")]
+    cols = st.columns(len(fut), gap="small")
+    for c, (lb, k) in zip(cols, fut):
+        q = quotes.get(k)
+        if not q:
+            continue
+        c.markdown(f'<div class="metric-card" style="padding:10px 8px">'
+                   f'<div style="font-size:0.65rem;color:#475569">{lb}</div>'
+                   f'<div style="font-size:0.95rem;font-weight:800;color:{_c(q["move_pct"] or 0)}">{(q["move_pct"] or 0):+.2f}%</div>'
+                   f'<div style="font-size:0.6rem;color:#64748b">{q["last"]:,.2f}</div></div>', unsafe_allow_html=True)
+    if sess == "夜盘":
+        st.caption("夜盘时段（美东 20:00–04:00）个股无免费报价，个股显示的是盘后最后成交价；大盘方向看上方期货。")
+
+    sw = (swing or {}).get("signals", {})
+    alerts = []
+    for t in LIVE_TICKERS:
+        q = quotes.get(t)
+        notes = live_quotes.assess(t, q, signals.get(t), sw.get(t))
+        if notes:
+            alerts.append((abs(q.get("move_pct") or 0), t, q, notes))
+    if alerts:
+        for _, t, q, notes in sorted(alerts, reverse=True):
+            mv = q.get("move_pct") or 0
+            big = abs(mv) >= live_quotes.ALERT_PCT
+            border = "#ff5252" if mv <= -live_quotes.ALERT_PCT else ("#00c864" if big else "#d97706")
+            sess_lb = "期货" if q["is_future"] else (q["ext_session"] or "收盘")
+            items = "".join(f'<div style="font-size:0.74rem;color:#cbd5e1;margin-top:3px">• {n}</div>' for n in notes)
+            st.markdown(f'<div class="glass-card" style="padding:10px 16px;margin-bottom:6px;border-left:3px solid {border}">'
+                        f'<b style="color:#e2e8f0">{t}</b> &nbsp;<span style="font-size:0.74rem;color:#64748b">'
+                        f'收盘 ${q["reg_close"]:,.2f}（{str(q["reg_time"])[:10]}）→ {sess_lb} ${q["last"]:,.2f}</span> '
+                        f'&nbsp;<b style="color:{_c(mv)}">{mv:+.2f}%</b>{items}</div>', unsafe_allow_html=True)
+    else:
+        st.caption(f"没有标的盘前/盘后变动超过 ±{live_quotes.ALERT_PCT:.0f}%，也没有影响信号的情况。")
+
+    with st.expander("全部标的实时报价", expanded=False):
+        rows = []
+        for t in LIVE_TICKERS:
+            q = quotes.get(t)
+            if q:
+                rows.append({"标的": t, "常规收盘": q["reg_close"], "收盘日": str(q["reg_time"])[:10],
+                             "时段": "期货" if q["is_future"] else (q["ext_session"] or "—"),
+                             "最新价": q["last"], "变动%": round(q["move_pct"] or 0, 2)})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.caption("主信号仍按常规时段收盘价计算（与回测一致）；本面板用于判断开盘跳空风险。数据：CNBC。")
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+
+
 def render_signals_tab() -> None:
     data = _load_latest_signal()
     if data is None:
@@ -1910,6 +1986,8 @@ def render_signals_tab() -> None:
         f'信号生成时间：<b style="color:#64748b">{gen_str}</b> &nbsp;·&nbsp; '
         f'运行 <code>python signal_generator.py</code> 刷新</div>',
         unsafe_allow_html=True)
+
+    render_live_panel(signals, data.get("swing"))
 
     if errors:
         with st.expander(f"⚠️ {len(errors)} 个资产信号生成失败（点击展开）", expanded=False):
@@ -2110,6 +2188,8 @@ def render_swing_tab() -> None:
         <b>卖</b>：收盘 &gt; 前一日最高价，或持仓满 5 天 → 次日开盘卖 &nbsp;·&nbsp;
         5 槽位 × 20% 资金，单边成本 5bp，不设硬止损
     </div>""", unsafe_allow_html=True)
+
+    render_live_panel((_load_latest_signal() or {}).get("signals", {}), sig)
 
     # ── 今日信号 ───────────────────────────────────────────
     if sig:
