@@ -1,9 +1,9 @@
 """
-盘前 / 盘后 / 夜盘实时报价（CNBC 报价接口，免费、批量、无需 key）
+盘前 / 盘后 / 夜盘 / 盘中实时报价（免费、批量、无需 key）
 
-个股：常规收盘价 + 盘前(PRE_MKT) / 盘后(POST_MKT) 最新成交
-期货：@GC.1 @SI.1 @CL.1 近 24 小时交易，直接给最新价
-夜盘（美东 20:00–04:00）：个股无免费报价，用纳指/标普期货代表大盘方向
+个股：Robinhood 24 小时报价（bounds=24_5，含美东 20:00–04:00 夜盘），按成交时间标注时段；
+      Robinhood 不可用时退回 CNBC 盘前/盘后报价
+期货：CNBC @GC.1 @SI.1 @CL.1 @ND.1 @SP.1，近 24 小时交易
 """
 from datetime import datetime
 from typing import Dict, List
@@ -26,8 +26,70 @@ def _f(x):
         return None
 
 
+_RH_URL = "https://api.robinhood.com/marketdata/quotes/"
+
+
+def _session_of(ts) -> str:
+    """按美东时间判断一笔成交所在时段"""
+    import pandas as pd
+    ny = pd.Timestamp(ts).tz_convert("America/New_York")
+    hm = ny.hour * 60 + ny.minute
+    if 4 * 60 <= hm < 9 * 60 + 30:
+        return "盘前"
+    if 9 * 60 + 30 <= hm < 16 * 60:
+        return "盘中"
+    if 16 * 60 <= hm < 20 * 60:
+        return "盘后"
+    return "夜盘"
+
+
+def _fetch_robinhood(tickers: List[str]) -> Dict[str, dict]:
+    stocks = [t for t in tickers if t not in CNBC_SYMBOL]
+    resp = requests.get(_RH_URL, params={"bounds": "24_5", "symbols": ",".join(stocks)},
+                        headers={"User-Agent": _UA}, timeout=15)
+    resp.raise_for_status()
+    out = {}
+    regular = market_session() == "常规交易"
+    for r in resp.json().get("results") or []:
+        if not r or _f(r.get("previous_close")) is None:
+            continue
+        prev = _f(r["previous_close"])
+        q = dict(symbol=r["symbol"], name=r["symbol"], is_future=False,
+                 reg_close=prev, reg_chg_pct=None, reg_time=r.get("previous_close_date"),
+                 ext_session=None, ext_last=None, ext_chg_pct=None, ext_time=None,
+                 bid=_f(r.get("bid_price")), ask=_f(r.get("ask_price")), source="Robinhood")
+        if regular:
+            last = _f(r.get("last_trade_price"))
+            q.update(ext_session="盘中", ext_last=last, ext_time=r.get("venue_last_trade_time"))
+        elif _f(r.get("last_non_reg_trade_price")) is not None and r.get("venue_last_non_reg_trade_time"):
+            q.update(ext_session=_session_of(r["venue_last_non_reg_trade_time"]),
+                     ext_last=_f(r["last_non_reg_trade_price"]), ext_time=r["venue_last_non_reg_trade_time"])
+        if q["ext_last"] is not None:
+            q["ext_chg_pct"] = (q["ext_last"] / prev - 1) * 100
+        q["last"] = q["ext_last"] if q["ext_last"] is not None else prev
+        q["move_pct"] = q["ext_chg_pct"] or 0.0
+        out[r["symbol"]] = q
+    return out
+
+
 def fetch_quotes(tickers: List[str]) -> Dict[str, dict]:
-    """返回 {ticker: {reg_close, reg_chg_pct, ext_session, ext_last, ext_chg_pct, last, move_pct, ...}}"""
+    """返回 {ticker: {reg_close, ext_session, ext_last, ext_chg_pct, last, move_pct, ...}}
+    个股优先 Robinhood（含夜盘），期货与备用走 CNBC；任一来源失败不影响另一个"""
+    out, errs = {}, []
+    try:
+        out.update(_fetch_cnbc(tickers))
+    except Exception as e:
+        errs.append(f"CNBC: {e}")
+    try:
+        out.update(_fetch_robinhood(tickers))
+    except Exception as e:
+        errs.append(f"Robinhood: {e}")
+    if not out:
+        raise RuntimeError("; ".join(errs))
+    return out
+
+
+def _fetch_cnbc(tickers: List[str]) -> Dict[str, dict]:
     sym = {t: CNBC_SYMBOL.get(t, t) for t in tickers}
     sym.update({k: v for k, v in INDEX_FUTURES.items()})
     resp = requests.get(_URL, params={
@@ -61,6 +123,7 @@ def fetch_quotes(tickers: List[str]) -> Dict[str, dict]:
         # 期货：最新价相对前结算；个股：盘前/盘后价相对常规收盘
         q["last"] = q["ext_last"] if q["ext_last"] is not None else reg
         q["move_pct"] = q["reg_chg_pct"] if is_fut else (q["ext_chg_pct"] or 0.0)
+        q["source"] = "CNBC"
         out[t] = q
     return out
 

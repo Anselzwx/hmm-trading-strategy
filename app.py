@@ -1928,8 +1928,6 @@ def render_live_panel(signals: dict, swing: dict) -> None:
                    f'<div style="font-size:0.65rem;color:#475569">{lb}</div>'
                    f'<div style="font-size:0.95rem;font-weight:800;color:{_c(q["move_pct"] or 0)}">{(q["move_pct"] or 0):+.2f}%</div>'
                    f'<div style="font-size:0.6rem;color:#64748b">{q["last"]:,.2f}</div></div>', unsafe_allow_html=True)
-    if sess == "夜盘":
-        st.caption("夜盘时段（美东 20:00–04:00）个股无免费报价，个股显示的是盘后最后成交价；大盘方向看上方期货。")
 
     sw = (swing or {}).get("signals", {})
     alerts = []
@@ -1957,11 +1955,14 @@ def render_live_panel(signals: dict, swing: dict) -> None:
         for t in LIVE_TICKERS:
             q = quotes.get(t)
             if q:
+                et = q.get("ext_time")
+                et = pd.Timestamp(et).tz_convert("America/New_York").strftime("%m-%d %H:%M ET") if et else "—"
                 rows.append({"标的": t, "常规收盘": q["reg_close"], "收盘日": str(q["reg_time"])[:10],
                              "时段": "期货" if q["is_future"] else (q["ext_session"] or "—"),
-                             "最新价": q["last"], "变动%": round(q["move_pct"] or 0, 2)})
+                             "最新价": q["last"], "变动%": round(q["move_pct"] or 0, 2),
+                             "成交时间": et, "来源": q.get("source", "")})
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-    st.caption("主信号仍按常规时段收盘价计算（与回测一致）；本面板用于判断开盘跳空风险。数据：CNBC。")
+    st.caption("主信号仍按常规时段收盘价计算（与回测一致）；本面板用于判断开盘跳空风险。个股 24 小时报价（含夜盘）：Robinhood；期货：CNBC。")
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
 
 
