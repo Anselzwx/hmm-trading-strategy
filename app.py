@@ -2272,6 +2272,214 @@ def render_swing_tab() -> None:
 
 
 # ──────────────────────────────────────────────────────────────
+# A股面板（中证2000 × 上证50）
+# ──────────────────────────────────────────────────────────────
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _ashare_hist(_mtime: float):
+    import a_share
+    res = _load_result("ASHARE")
+    if res is None:
+        return None
+    return a_share.extend_recent(res["hist"])
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _ashare_live():
+    import a_share
+    return a_share.fetch_live(), a_share.fetch_intraday()
+
+
+def render_ashare_tab() -> None:
+    import a_share
+    res = _load_result("ASHARE")
+    if res is None:
+        st.warning("无A股数据，请先运行 precompute.py")
+        return
+    path = os.path.join(RESULTS_DIR, "ASHARE.pkl")
+    hist = _ashare_hist(os.path.getmtime(path))
+    f = a_share.indicators(hist)
+    live, intra = _ashare_live()
+    q, basis = live["quotes"], live["basis"]
+    sig = a_share.current_signals(f, live)
+
+    def _c(v):
+        return "#00c864" if v >= 0 else "#ff5252"
+
+    def _card(label, value, sub="", color="#e2e8f0", border=None):
+        bl = f"border-left:3px solid {border};" if border else ""
+        return (f'<div class="metric-card" style="padding:10px 10px;{bl}">'
+                f'<div style="font-size:0.65rem;color:#475569">{label}</div>'
+                f'<div style="font-size:1.0rem;font-weight:800;color:{color}">{value}</div>'
+                f'<div style="font-size:0.6rem;color:#64748b;line-height:1.5">{sub}</div></div>')
+
+    # ── 实时行情 ───────────────────────────────────────────
+    now = live["fetched_at"]
+    st.markdown(f'<div class="section-header">🇨🇳 实时行情 &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">'
+                f'{live["session"]} · 北京时间 {now.strftime("%m-%d %H:%M")} · 每 60 秒刷新</span></div>',
+                unsafe_allow_html=True)
+    if live["errors"]:
+        st.caption("部分数据源失败：" + "；".join(live["errors"]))
+
+    s_q, b_q, all_q = q.get("csi2000"), q.get("sz50"), q.get("csiall")
+    s_live = sig["trend"].get("live") or (s_q or {}).get("last")
+    share_live = (s_q["amount"] / all_q["amount"] * 100) if s_q and all_q and s_q.get("amount") else None
+    cards = []
+    if s_q:
+        cards.append(_card("中证2000" + ("（ETF推算）" if s_q.get("source") == "ETF推算" else ""),
+                           f'{s_q["pct"]:+.2f}%', f'{s_live:,.2f}' if s_live else "", _c(s_q["pct"])))
+    if b_q:
+        cards.append(_card("上证50", f'{b_q["pct"]:+.2f}%', f'{b_q["last"]:,.2f}', _c(b_q["pct"])))
+    if s_q and b_q:
+        gap = s_q["pct"] - b_q["pct"]
+        cards.append(_card("小盘 − 大盘", f'{gap:+.2f}pp', "今日风格", _c(gap)))
+    if all_q:
+        cards.append(_card("全A成交额", f'{all_q["amount"]:,.0f} 亿', "中证全指口径"))
+    if share_live is not None:
+        cards.append(_card("2000 成交占比", f'{share_live:.1f}%', f'昨日 {sig["risk"]["share"]:.1f}%'))
+    for lb in ("IM", "IH"):
+        b = basis.get(lb)
+        if b:
+            cards.append(_card(f'{lb} 年化基差', f'{b["annual_pct"]:+.1f}%',
+                               f'{b["basis_pct"]:+.2f}% · 距到期 {b["days"]} 天', _c(b["annual_pct"])))
+    for c, html in zip(st.columns(len(cards), gap="small"), cards):
+        c.markdown(html, unsafe_allow_html=True)
+
+    if intra:
+        fig = go.Figure()
+        for k, name, col in (("csi2000", "中证2000", "#ffd740"), ("sz50", "上证50", "#60a5fa")):
+            if k in intra:
+                s = intra[k]
+                fig.add_trace(go.Scatter(x=s.index, y=s.values, name=name, line=dict(color=col, width=2),
+                                         hovertemplate="%{y:+.2f}%"))
+        fig.add_hline(y=0, line=dict(color="#475569", width=1, dash="dot"))
+        fig.update_layout(**_base_layout(height=300, title="今日分时（相对昨收 %）"))
+        fig.update_xaxes(gridcolor=_gc(), rangebreaks=[dict(bounds=[11.5, 13], pattern="hour")])
+        fig.update_yaxes(gridcolor=_gc(), ticksuffix="%")
+        fig.update_layout(legend=dict(xanchor="right", x=1))
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ── 信号 ───────────────────────────────────────────────
+    t, sty, b50, rk = sig["trend"], sig["style"], sig["sz50"], sig["risk"]
+    st.markdown(f'<div class="section-header">⚡ 信号 &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">'
+                f'按 {sig["date"]} 收盘 · 收盘出信号，次日开盘执行</span></div>', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4, gap="small")
+    tc = "#00c864" if t["action"] == "持有" else "#475569"
+    sub = f'收盘 {t["close"]:,.0f} · MA20 {t["ma"]:,.0f}（{t["dist_pct"]:+.1f}%）'
+    if "preview" in t:
+        flip = '<b style="color:#d97706">⚠ 将翻转</b>' if t["flip"] else "不变"
+        sub += f'<br>按现价 {t["live"]:,.0f} 收盘 → {t["preview"]}（{t["live_dist_pct"]:+.1f}%）{flip}'
+    c1.markdown(_card("中证2000 趋势（主信号）", t["action"], sub, tc, tc), unsafe_allow_html=True)
+    sc = "#ffd740" if sty["small"] else "#60a5fa"
+    c2.markdown(_card("大小盘风格（参考）", "小盘占优" if sty["small"] else "大盘占优",
+                      f'2000/50 比值 20 日动量 {sty["mom_pct"]:+.1f}%', sc, sc), unsafe_allow_html=True)
+    bc = "#00c864" if b50["above_ma60"] else "#ff5252"
+    c3.markdown(_card("上证50 位置（无择时信号）", "MA60 上方" if b50["above_ma60"] else "MA60 下方",
+                      f'距 MA60 {b50["dist_ma60_pct"]:+.1f}% · MA20 {"上方" if b50["above_ma20"] else "下方"}'
+                      f'<br>均线择时回测跑输持有，仅看位置', bc, bc), unsafe_allow_html=True)
+    lights = []
+    if rk["share_pct"] >= 0.9:
+        lights.append(f'小盘拥挤（成交占比 {rk["share"]:.1f}%，1 年 {rk["share_pct"]*100:.0f} 分位）')
+    if rk["s_vol_pct"] >= 0.8:
+        lights.append(f'2000 波动 {rk["s_vol"]:.0f}%（3 年 {rk["s_vol_pct"]*100:.0f} 分位）')
+    im = basis.get("IM")
+    if im and im["annual_pct"] <= -10:
+        lights.append(f'IM 深贴水 {im["annual_pct"]:+.1f}%/年')
+    rc = "#ff5252" if len(lights) >= 2 else ("#d97706" if lights else "#00c864")
+    c4.markdown(_card("风险灯", ["正常", "注意", "高风险", "高风险"][len(lights)],
+                      "<br>".join(lights) or f'拥挤 {rk["share_pct"]*100:.0f} 分位 · 波动 {rk["s_vol_pct"]*100:.0f} 分位',
+                      rc, rc), unsafe_allow_html=True)
+    st.caption(f'中证2000 距一年高点 {rk["s_dd"]:.1f}% · 上证50 距一年高点 {rk["b_dd"]:.1f}%。'
+               '主信号回测：控回撤有效，但收益集中在少数大趋势（剔除最好 3% 的交易后为负），不要当成稳定 alpha。')
+
+    # ── 走势图 ─────────────────────────────────────────────
+    win = st.radio("区间", ["6个月", "1年", "3年", "全部"], index=1, horizontal=True, key="_ashare_win",
+                   label_visibility="collapsed")
+    n = {"6个月": 122, "1年": 244, "3年": 732, "全部": len(f)}[win]
+    g = f.iloc[-n:]
+    pos = res["backtest"]["position"].reindex(g.index).fillna(0)
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35], vertical_spacing=0.04,
+                        subplot_titles=("中证2000 · MA20（绿底 = 持有期）", "大小盘比值 2000/50 · MA20"))
+    fig.add_trace(go.Scatter(x=g.index, y=g["s"], name="中证2000", line=dict(color="#ffd740", width=1.8)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=g.index, y=g["s_ma"], name="MA20", line=dict(color="#94a3b8", width=1.2, dash="dot")), row=1, col=1)
+    on = pos > 0
+    starts = g.index[on & ~on.shift(1, fill_value=False)]
+    ends = g.index[on & ~on.shift(-1, fill_value=False)]
+    for a, b in zip(starts, ends):
+        fig.add_vrect(x0=a, x1=b, fillcolor="rgba(0,200,100,0.10)", line_width=0, row=1, col=1)
+    if "preview" in t:
+        fig.add_trace(go.Scatter(x=[pd.Timestamp(now.date())], y=[t["live"]], name="实时", mode="markers",
+                                 marker=dict(color="#ffd740", size=9, symbol="diamond",
+                                             line=dict(color="#080c14", width=2))), row=1, col=1)
+    fig.add_trace(go.Scatter(x=g.index, y=g["ratio"], name="2000/50", line=dict(color="#c084fc", width=1.6)), row=2, col=1)
+    fig.add_trace(go.Scatter(x=g.index, y=g["ratio_ma"], name="比值 MA20", line=dict(color="#94a3b8", width=1.2, dash="dot")), row=2, col=1)
+    fig.update_layout(**_base_layout(height=560))
+    fig.update_xaxes(gridcolor=_gc(), rangebreaks=[dict(bounds=["sat", "mon"])])
+    fig.update_yaxes(gridcolor=_gc())
+    fig.update_annotations(font=dict(size=12))
+    fig.update_layout(legend=dict(xanchor="right", x=1))
+    st.plotly_chart(fig, use_container_width=True)
+
+    cl, cr = st.columns(2, gap="medium")
+    with cl:
+        fig = go.Figure(go.Scatter(x=g.index, y=g["share"], name="成交占比", line=dict(color="#f97316", width=1.6),
+                                   hovertemplate="%{y:.1f}%"))
+        hi = f["share"].rolling(244).quantile(0.9).reindex(g.index)
+        fig.add_trace(go.Scatter(x=g.index, y=hi, name="1 年 90 分位", line=dict(color="#ff5252", width=1, dash="dash")))
+        fig.update_layout(**_base_layout(height=300, title="小盘拥挤度：中证2000 成交额 / 中证全指"))
+        fig.update_xaxes(gridcolor=_gc(), rangebreaks=[dict(bounds=["sat", "mon"])])
+        fig.update_yaxes(gridcolor=_gc(), ticksuffix="%")
+        fig.update_layout(legend=dict(xanchor="right", x=1))
+        st.plotly_chart(fig, use_container_width=True)
+    with cr:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=g.index, y=g["s_vol"], name="中证2000", line=dict(color="#ffd740", width=1.6)))
+        fig.add_trace(go.Scatter(x=g.index, y=g["b_vol"], name="上证50", line=dict(color="#60a5fa", width=1.6)))
+        fig.update_layout(**_base_layout(height=300, title="20 日年化波动率"))
+        fig.update_xaxes(gridcolor=_gc(), rangebreaks=[dict(bounds=["sat", "mon"])])
+        fig.update_yaxes(gridcolor=_gc(), ticksuffix="%")
+        fig.update_layout(legend=dict(xanchor="right", x=1))
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ── 回测 ───────────────────────────────────────────────
+    bt = res["backtest"]
+    m, bm = bt["metrics"], bt["bh_metrics"]
+    st.markdown('<div class="section-header">📈 主信号回测（中证2000 收盘&gt;MA20，2014 至今，次日开盘成交，单边 10bp）</div>',
+                unsafe_allow_html=True)
+    cs = st.columns(6, gap="small")
+    for c, (lb, val, sb, col) in zip(cs, [
+        ("年化", f'{m["cagr_pct"]:.1f}%', f'持有 {bm["cagr_pct"]:.1f}%', "green"),
+        ("夏普", f'{m["sharpe"]:.2f}', f'持有 {bm["sharpe"]:.2f}', "white"),
+        ("最大回撤", f'{m["max_drawdown_pct"]:.1f}%', f'持有 {bm["max_drawdown_pct"]:.1f}%', "red"),
+        ("胜率", f'{m["win_rate"]:.0f}%', "少数大赢家贡献收益", "white"),
+        ("交易数", f'{m["n_trades"]}', "", "white"),
+        ("持仓时间", f'{m["exposure_pct"]:.0f}%', "", "white"),
+    ]):
+        c.markdown(_metric(lb, val, sb, col), unsafe_allow_html=True)
+    eq, bh = bt["equity"], bt["bh_equity"]
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
+    fig.add_trace(go.Scatter(x=eq.index, y=eq.values, name="MA20 趋势", line=dict(color="#ffd740", width=2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=bh.index, y=bh.values, name="中证2000 持有", line=dict(color="#64748b", width=1.2, dash="dot")), row=1, col=1)
+    for s, name, col in ((eq, "策略回撤", "#ff5252"), (bh, "持有回撤", "#64748b")):
+        dd = (s / s.cummax() - 1) * 100
+        fig.add_trace(go.Scatter(x=dd.index, y=dd.values, name=name, line=dict(color=col, width=1),
+                                 fill="tozeroy" if name == "策略回撤" else None), row=2, col=1)
+    fig.update_layout(**_base_layout(height=440, title="净值（对数）与回撤 %"))
+    fig.update_yaxes(type="log", row=1, col=1, gridcolor=_gc())
+    fig.update_yaxes(gridcolor=_gc(), ticksuffix="%", row=2, col=1)
+    fig.update_xaxes(gridcolor=_gc())
+    fig.update_layout(legend=dict(xanchor="right", x=1))
+    st.plotly_chart(fig, use_container_width=True)
+    seg = pd.DataFrame(bt["segments"])[["period", "cagr_pct", "sharpe", "max_drawdown_pct", "bh_sharpe", "bh_mdd"]]
+    seg.columns = ["区间", "年化%", "夏普", "最大回撤%", "持有夏普", "持有回撤%"]
+    st.dataframe(seg.round(2), hide_index=True, use_container_width=True)
+    st.caption("中证2000 指数 2023 年 8 月发布，之前为中证回算数据；对应 ETF（563300 等）2023 年后才可交易。"
+               f'历史数据算至 {hist["csi2000"].index[-1].date()}。')
+
+
+# ──────────────────────────────────────────────────────────────
 # 组合面板
 # ──────────────────────────────────────────────────────────────
 
@@ -2556,7 +2764,7 @@ def main() -> None:
     ]
     NAV_TICKER = {label: tick for label, tick in _TICKER_MAP_BASE}
 
-    NAV_OPTIONS = ["📡  今日信号", "🔄  波段", "🌐  组合"] + [label for label, _ in _TICKER_MAP_BASE]
+    NAV_OPTIONS = ["📡  今日信号", "🔄  波段", "🇨🇳  A股", "🌐  组合"] + [label for label, _ in _TICKER_MAP_BASE]
 
     # key includes option count so adding tickers forces a fresh widget
     _nav_key = f"_nav_radio_{len(NAV_OPTIONS)}"
@@ -2586,6 +2794,8 @@ def main() -> None:
         render_signals_tab()
     elif _active == "🔄  波段":
         render_swing_tab()
+    elif _active == "🇨🇳  A股":
+        render_ashare_tab()
     elif _active == "🌐  组合":
         render_portfolio_tab()
     elif _active in NAV_TICKER:

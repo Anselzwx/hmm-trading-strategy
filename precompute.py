@@ -130,6 +130,19 @@ def main():
         print(f"        ⚠️ 失败：{e}")
         failed.append("SWING")
 
+    print(f"\n  A股（中证2000 / 上证50）...")
+    try:
+        from a_share import build as build_ashare
+        res_a = build_ashare()
+        with open(os.path.join(OUT_DIR, "ASHARE.pkl"), "wb") as f:
+            pickle.dump(res_a, f)
+        ma = res_a["backtest"]["metrics"]
+        print(f"        中证2000 MA20：CAGR {ma['cagr_pct']:+.1f}%  夏普 {ma['sharpe']:.2f}  MaxDD {ma['max_drawdown_pct']:.1f}%  "
+              f"数据至 {res_a['hist']['csi2000'].index[-1].date()}")
+    except Exception as e:
+        print(f"        ⚠️ 失败：{e}")
+        failed.append("ASHARE")
+
     ts_path = os.path.join(OUT_DIR, "computed_at.txt")
     with open(ts_path, "w") as f:
         f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
