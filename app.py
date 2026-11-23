@@ -1902,6 +1902,7 @@ def _live_quotes():
         return {}, str(e)
 
 
+@st.fragment(run_every=60)
 def render_live_panel(signals: dict, swing: dict) -> None:
     """盘前/盘后/夜盘实时报价 + 对现有信号的影响提示（主信号仍按收盘价）"""
     import live_quotes
@@ -1909,7 +1910,7 @@ def render_live_panel(signals: dict, swing: dict) -> None:
     ny = pd.Timestamp.now(tz="America/New_York")
     sess = live_quotes.market_session()
     st.markdown(f'<div class="section-header">🌙 盘前 / 盘后 / 夜盘实时 &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">'
-                f'当前时段：<b style="color:#e2e8f0">{sess}</b> · 美东 {ny.strftime("%m-%d %H:%M")} · 每 60 秒刷新</span></div>',
+                f'当前时段：<b style="color:#e2e8f0">{sess}</b> · 美东 {ny.strftime("%m-%d %H:%M")} · 每 60 秒自动刷新</span></div>',
                 unsafe_allow_html=True)
     if err or not quotes:
         st.warning(f"实时报价获取失败：{err or '无数据'}")
@@ -2291,15 +2292,10 @@ def _ashare_live():
     return a_share.fetch_live(), a_share.fetch_intraday()
 
 
-def render_ashare_tab() -> None:
+@st.fragment(run_every=60)
+def _ashare_live_section(f: pd.DataFrame) -> None:
+    """实时行情 + 分时 + 信号：每 60 秒自动重跑（只刷新这一块）"""
     import a_share
-    res = _load_result("ASHARE")
-    if res is None:
-        st.warning("无A股数据，请先运行 precompute.py")
-        return
-    path = os.path.join(RESULTS_DIR, "ASHARE.pkl")
-    hist = _ashare_hist(os.path.getmtime(path))
-    f = a_share.indicators(hist)
     live, intra = _ashare_live()
     q, basis = live["quotes"], live["basis"]
     sig = a_share.current_signals(f, live)
@@ -2317,7 +2313,7 @@ def render_ashare_tab() -> None:
     # ── 实时行情 ───────────────────────────────────────────
     now = live["fetched_at"]
     st.markdown(f'<div class="section-header">🇨🇳 实时行情 &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">'
-                f'{live["session"]} · 北京时间 {now.strftime("%m-%d %H:%M")} · 每 60 秒刷新</span></div>',
+                f'{live["session"]} · 北京时间 {now.strftime("%m-%d %H:%M")} · 每 60 秒自动刷新</span></div>',
                 unsafe_allow_html=True)
     if live["errors"]:
         st.caption("部分数据源失败：" + "；".join(live["errors"]))
@@ -2392,6 +2388,21 @@ def render_ashare_tab() -> None:
                       rc, rc), unsafe_allow_html=True)
     st.caption(f'中证2000 距一年高点 {rk["s_dd"]:.1f}% · 上证50 距一年高点 {rk["b_dd"]:.1f}%。'
                '主信号回测：控回撤有效，但收益集中在少数大趋势（剔除最好 3% 的交易后为负），不要当成稳定 alpha。')
+
+
+def render_ashare_tab() -> None:
+    import a_share
+    res = _load_result("ASHARE")
+    if res is None:
+        st.warning("无A股数据，请先运行 precompute.py")
+        return
+    path = os.path.join(RESULTS_DIR, "ASHARE.pkl")
+    hist = _ashare_hist(os.path.getmtime(path))
+    f = a_share.indicators(hist)
+    _ashare_live_section(f)
+
+    live, _ = _ashare_live()
+    t, now = a_share.current_signals(f, live)["trend"], live["fetched_at"]
 
     # ── 走势图 ─────────────────────────────────────────────
     win = st.radio("区间", ["6个月", "1年", "3年", "全部"], index=1, horizontal=True, key="_ashare_win",
