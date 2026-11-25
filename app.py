@@ -1967,6 +1967,101 @@ def render_live_panel(signals: dict, swing: dict) -> None:
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _fear_greed():
+    import fear_greed
+    try:
+        return fear_greed.fetch(), None
+    except Exception as e:
+        return None, str(e)
+
+
+def render_fear_greed_panel() -> None:
+    """CNN Fear & Greed：总分仪表 + 历史 + 7 个子指标（情绪参考，不进信号）"""
+    import fear_greed as FG
+    d, err = _fear_greed()
+    st.markdown('<div class="section-header">😱 CNN 恐惧与贪婪指数 &nbsp;<span style="font-size:0.72rem;color:#475569;font-weight:400">'
+                '美股市场情绪 · 7 指标等权 · 每 30 分钟刷新</span></div>', unsafe_allow_html=True)
+    if err or not d:
+        st.warning(f"恐惧贪婪指数获取失败：{err or '无数据'}")
+        return
+
+    v = d["value"]
+    _, _, font_c, *_ = _chart_colors()
+    c1, c2 = st.columns([2, 3], gap="medium")
+    with c1:
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number", value=v,
+            number=dict(font=dict(size=44, color=FG.band_color(v))),
+            gauge=dict(
+                axis=dict(range=[0, 100], tickvals=[0, 25, 45, 55, 75, 100], tickfont=dict(size=10)),
+                bar=dict(color=FG.band_color(v), thickness=0.25),
+                bgcolor="rgba(0,0,0,0)", borderwidth=0,
+                steps=[dict(range=r, color=c) for r, c in [
+                    ((0, 25), "rgba(255,82,82,0.22)"), ((25, 45), "rgba(251,146,60,0.18)"),
+                    ((45, 55), "rgba(148,163,184,0.15)"), ((55, 75), "rgba(74,222,128,0.16)"),
+                    ((75, 100), "rgba(0,200,100,0.24)")]],
+            )))
+        fig.update_layout(**_base_layout(height=210))
+        fig.update_layout(margin=dict(l=24, r=24, t=16, b=0))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        ts = d["timestamp"].strftime("%m-%d %H:%M ET") if d["timestamp"] is not None else "—"
+        st.markdown(f'<div style="text-align:center;margin-top:-10px"><b style="color:{FG.band_color(v)};font-size:1.05rem">'
+                    f'{FG.band(v)}</b> <span style="font-size:0.7rem;color:#64748b">· {ts}</span></div>',
+                    unsafe_allow_html=True)
+        cmp = d["compare"]
+        cols = st.columns(4, gap="small")
+        for c, (lb, k) in zip(cols, [("昨日", "yesterday"), ("1 周前", "week"), ("1 月前", "month"), ("3 月前", "quarter")]):
+            x = cmp.get(k)
+            if x is None:
+                continue
+            c.markdown(f'<div class="metric-card" style="padding:8px 4px">'
+                       f'<div style="font-size:0.62rem;color:#475569">{lb}</div>'
+                       f'<div style="font-size:0.95rem;font-weight:800;color:{FG.band_color(x)}">{x:.0f}</div>'
+                       f'<div style="font-size:0.58rem;color:#64748b">{FG.band(x)}</div></div>', unsafe_allow_html=True)
+    with c2:
+        h = d["history"]
+        fig = go.Figure()
+        for lo, hi, col in [(0, 25, "rgba(255,82,82,0.08)"), (75, 100, "rgba(0,200,100,0.08)")]:
+            fig.add_hrect(y0=lo, y1=hi, fillcolor=col, line_width=0)
+        fig.add_trace(go.Scatter(x=h.index, y=h.values, mode="lines", name="F&G",
+                                 line=dict(color="#60a5fa", width=2),
+                                 hovertemplate="%{x|%Y-%m-%d}: %{y:.0f}<extra></extra>"))
+        fig.add_hline(y=50, line_dash="dot", line_color="#475569", line_width=1)
+        fig.update_layout(**_base_layout(height=290, title=dict(text=f"近 {len(h)} 个交易日", font=dict(size=12)),
+                                         showlegend=False,
+                                         yaxis=dict(range=[0, 100], gridcolor=_gc(), tickvals=[0, 25, 50, 75, 100]),
+                                         xaxis=dict(gridcolor=_gc())))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    inds = d["indicators"]
+    fig = go.Figure(go.Bar(
+        y=[r["name"] for r in inds][::-1], x=[r["score"] for r in inds][::-1], orientation="h",
+        marker_color=[FG.band_color(r["score"]) for r in inds][::-1],
+        text=[f'{r["score"]:.1f} · {FG.band(r["score"])}' for r in inds][::-1], textposition="outside",
+        textfont=dict(color=font_c, size=11),
+        customdata=[[r["desc"]] for r in inds][::-1],
+        hovertemplate="%{y}（%{customdata[0]}）: %{x:.1f}<extra></extra>"))
+    fig.add_vline(x=50, line_dash="dot", line_color="#475569", line_width=1)
+    fig.update_layout(**_base_layout(height=290, title=dict(text="7 个子指标（0 = 极度恐惧，100 = 极度贪婪）", font=dict(size=12)),
+                                     showlegend=False,
+                                     xaxis=dict(range=[0, 115], gridcolor=_gc(), tickvals=[0, 25, 50, 75, 100]),
+                                     yaxis=dict(gridcolor="rgba(0,0,0,0)")))
+    fig.update_layout(hovermode="closest")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    with st.expander("子指标说明", expanded=False):
+        st.dataframe(pd.DataFrame([{
+            "指标": r["name"], "衡量": r["desc"], "偏恐惧时": r["fear_means"],
+            "分数": round(r["score"], 1), "CNN 评级": r["rating"],
+            "数据时间": r["timestamp"].strftime("%m-%d %H:%M ET") if r["timestamp"] is not None else "—",
+        } for r in inds]), hide_index=True, use_container_width=True)
+    n_fear = sum(r["score"] < 25 for r in inds)
+    st.caption(f"{n_fear}/7 项处于极度恐惧。数据：CNN Business（经 fgscore.com 转载）。情绪指标仅作仓位/风险偏好参考，"
+               "未经回测，不参与主信号；极度恐惧可持续数周，不能单独作为抄底信号。")
+    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
+
+
 def render_signals_tab() -> None:
     data = _load_latest_signal()
     if data is None:
@@ -1990,6 +2085,7 @@ def render_signals_tab() -> None:
         unsafe_allow_html=True)
 
     render_live_panel(signals, data.get("swing"))
+    render_fear_greed_panel()
 
     if errors:
         with st.expander(f"⚠️ {len(errors)} 个资产信号生成失败（点击展开）", expanded=False):
