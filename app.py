@@ -2056,9 +2056,24 @@ def render_fear_greed_panel() -> None:
             "分数": round(r["score"], 1), "CNN 评级": r["rating"],
             "数据时间": r["timestamp"].strftime("%m-%d %H:%M ET") if r["timestamp"] is not None else "—",
         } for r in inds]), hide_index=True, use_container_width=True)
+    # 恐惧 × SPY HMM bear 历史提示（2026-11-27 回测：做成规则不稳健，只作心态参考）
+    spy = _load_result("SPY")
+    spy_bear = None
+    if spy is not None and "state" in spy["df"]:
+        spy_bear = int(spy["df"]["state"].iloc[-1]) == 0
+    hint = ("历史上 F&G&lt;25 且 SPY HMM 处于 bear 时，SPY 随后 60 日平均 +9~11%、胜率 77~86%，"
+            "但期间年化波动 ~45%，且 13~19 次事件里有继续深跌的（如 2020-02 后 20 日 −22%）。"
+            "做成抄底规则回测不稳健，仅提示：此时不宜恐慌清仓。")
+    if v < 25 and spy_bear:
+        st.markdown(f'<div class="glass-card" style="padding:10px 16px;margin-bottom:6px;border-left:3px solid #d97706">'
+                    f'<b style="color:#e2e8f0">⚠️ 当前：极度恐惧 + SPY HMM bear</b>'
+                    f'<div style="font-size:0.74rem;color:#cbd5e1;margin-top:4px">{hint}</div></div>',
+                    unsafe_allow_html=True)
+    else:
+        st.caption(f"💡 {hint}".replace("&lt;", "<"))
     n_fear = sum(r["score"] < 25 for r in inds)
     st.caption(f"{n_fear}/7 项处于极度恐惧。数据：CNN Business（经 fgscore.com 转载）。情绪指标仅作仓位/风险偏好参考，"
-               "未经回测，不参与主信号；极度恐惧可持续数周，不能单独作为抄底信号。")
+               "不参与主信号；单独择时及与 HMM 组合的回测均未跑赢基准（2011–2026 SPY）。")
     st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
 
 
